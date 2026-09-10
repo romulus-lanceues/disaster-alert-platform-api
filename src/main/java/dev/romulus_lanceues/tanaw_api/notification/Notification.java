@@ -5,9 +5,10 @@ import dev.romulus_lanceues.tanaw_api.enums.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.enums.NotificationStatus;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 
 import java.time.Instant;
@@ -24,8 +25,9 @@ import java.util.UUID;
         }
 )
 @Getter
-@Setter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Notification {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -58,4 +60,18 @@ public class Notification {
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    public void incrementAttempt() {
+        this.attemptCount++;
+    }
+
+    public void recordSuccess(Instant sentAt, NotificationStatus status) {
+        this.status = status;
+        this.sentAt = sentAt;
+    }
+
+    public void recordFailure(NotificationStatus status, String failureReason) {
+        this.status = status;
+        this.failureReason = failureReason;
+    }
 }

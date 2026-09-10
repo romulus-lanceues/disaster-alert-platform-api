@@ -3,9 +3,7 @@ package dev.romulus_lanceues.tanaw_api.location;
 import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
 import dev.romulus_lanceues.tanaw_api.user.User;
 import jakarta.persistence.*;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.locationtech.jts.geom.Point;
@@ -21,7 +19,9 @@ import java.util.UUID;
 @EntityListeners(AuditingEntityListener.class)
 @Table(name = "locations")
 @Getter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Location {
 
     @Id
@@ -77,6 +77,13 @@ public class Location {
         location.longitude = longitude;
         location.location = geoPointFactory.create(latitude, longitude);
 
-        return location;
+        return Location.builder()
+                .name(name)
+                .address(address)
+                .geographicArea(geographicArea)
+                .latitude(latitude)
+                .longitude(longitude)
+                .location(geoPointFactory.create(latitude, longitude))
+                .build();
     }
 }
