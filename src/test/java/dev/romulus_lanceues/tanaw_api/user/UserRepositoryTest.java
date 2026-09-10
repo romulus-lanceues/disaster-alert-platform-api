@@ -3,6 +3,8 @@ package dev.romulus_lanceues.tanaw_api.user;
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
 import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -21,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingTestConfig.class})
+@DisplayName("UserRepository Tests")
 class UserRepositoryTest {
 
     @Container
@@ -54,78 +57,116 @@ class UserRepositoryTest {
                 .build();
     }
 
-    @Test
-    void shouldPersistUserAndGenerateAuditFields() {
-        User user = User.builder()
-                .email("charlie@example.com")
-                .passwordHash("hash_charlie_789")
-                .status(UserStatus.ACTIVE)
-                .build();
+    @Nested
+    @DisplayName("Entity Persistence and Auditing")
+    class PersistenceAndAuditing {
 
-        User saved = userRepository.saveAndFlush(user);
+        @Test
+        @DisplayName("should persist user and generate audit fields")
+        void shouldPersistUserAndGenerateAuditFields() {
+            User user = User.builder()
+                    .email("charlie@example.com")
+                    .passwordHash("hash_charlie_789")
+                    .status(UserStatus.ACTIVE)
+                    .build();
 
-        assertThat(saved.getId()).isNotNull();
-        assertThat(saved.getCreatedAt()).isNotNull();
-        assertThat(saved.getUpdatedAt()).isNotNull();
+            User saved = userRepository.saveAndFlush(user);
+
+            assertThat(saved.getId()).isNotNull();
+            assertThat(saved.getCreatedAt()).isNotNull();
+            assertThat(saved.getUpdatedAt()).isNotNull();
+        }
     }
 
-    @Test
-    void shouldFindUserByEmail_whenUserExists() {
-        entityManager.persistAndFlush(activeUser);
-        entityManager.persistAndFlush(disabledUser);
+    @Nested
+    @DisplayName("findByEmail")
+    class FindByEmail {
 
-        Optional<User> found = userRepository.findByEmail(activeUser.getEmail());
+        @Test
+        @DisplayName("should find user by email when user exists")
+        void shouldFindUserByEmailWhenUserExists() {
+            entityManager.persistAndFlush(activeUser);
+            entityManager.persistAndFlush(disabledUser);
 
-        assertThat(found)
-                .isPresent()
-                .hasValueSatisfying(user -> {
-                    assertThat(user.getId()).isEqualTo(activeUser.getId());
-                    assertThat(user.getEmail()).isEqualTo(activeUser.getEmail());
-                    assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
-                });
+            Optional<User> found = userRepository.findByEmail(activeUser.getEmail());
+
+            assertThat(found)
+                    .isPresent()
+                    .hasValueSatisfying(user -> {
+                        assertThat(user.getId()).isEqualTo(activeUser.getId());
+                        assertThat(user.getEmail()).isEqualTo(activeUser.getEmail());
+                        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+                    });
+        }
+
+        @Test
+        @DisplayName("should return empty when email does not exist")
+        void shouldReturnEmptyWhenFindByEmailGivenNonExistentEmail() {
+            Optional<User> notFound = userRepository.findByEmail("nonexistent@example.com");
+
+            assertThat(notFound).isEmpty();
+        }
     }
 
-    @Test
-    void shouldReturnEmpty_whenFindByEmail_givenNonExistentEmail() {
-        Optional<User> notFound = userRepository.findByEmail("nonexistent@example.com");
+    @Nested
+    @DisplayName("existsByEmail")
+    class ExistsByEmail {
 
-        assertThat(notFound).isEmpty();
+        @Test
+        @DisplayName("should return true when email exists")
+        void shouldReturnTrueWhenExistsByEmailGivenExistingEmail() {
+            entityManager.persistAndFlush(activeUser);
+
+            boolean exists = userRepository.existsByEmail(activeUser.getEmail());
+
+            assertThat(exists).isTrue();
+        }
+
+        @Test
+        @DisplayName("should return false when email does not exist")
+        void shouldReturnFalseWhenExistsByEmailGivenNonExistentEmail() {
+            boolean exists = userRepository.existsByEmail("nonexistent@example.com");
+
+            assertThat(exists).isFalse();
+        }
     }
 
-    @Test
-    void shouldReturnTrue_whenExistsByEmail_givenExistingEmail() {
-        entityManager.persistAndFlush(activeUser);
+    @Nested
+    @DisplayName("findByEmailAndStatus")
+    class FindByEmailAndStatus {
 
-        boolean exists = userRepository.existsByEmail(activeUser.getEmail());
+        @Test
+        @DisplayName("should find user when email and status match")
+        void shouldFindUserWhenFindByEmailAndStatusGivenMatchingCriteria() {
+            entityManager.persistAndFlush(activeUser);
+            entityManager.persistAndFlush(disabledUser);
 
-        assertThat(exists).isTrue();
-    }
+            Optional<User> found = userRepository.findByEmailAndStatus(activeUser.getEmail(), UserStatus.ACTIVE);
 
-    @Test
-    void shouldReturnFalse_whenExistsByEmail_givenNonExistentEmail() {
-        boolean exists = userRepository.existsByEmail("nonexistent@example.com");
+            assertThat(found)
+                    .isPresent()
+                    .hasValueSatisfying(user -> {
+                        assertThat(user.getId()).isEqualTo(activeUser.getId());
+                        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+                    });
+        }
 
-        assertThat(exists).isFalse();
-    }
+        @Test
+        @DisplayName("should return empty when status does not match")
+        void shouldReturnEmptyWhenFindByEmailAndStatusGivenMismatchedStatus() {
+            entityManager.persistAndFlush(activeUser);
 
-    @Test
-    void shouldFindUser_whenFindByEmailAndStatus_givenMatchingCriteria() {
-        entityManager.persistAndFlush(activeUser);
-        entityManager.persistAndFlush(disabledUser);
+            Optional<User> found = userRepository.findByEmailAndStatus(activeUser.getEmail(), UserStatus.DISABLED);
 
-        Optional<User> found = userRepository.findByEmailAndStatus(activeUser.getEmail(), UserStatus.ACTIVE);
+            assertThat(found).isEmpty();
+        }
 
-        assertThat(found).isPresent();
-        assertThat(found.get().getId()).isEqualTo(activeUser.getId());
-        assertThat(found.get().getStatus()).isEqualTo(UserStatus.ACTIVE);
-    }
+        @Test
+        @DisplayName("should return empty when email does not exist")
+        void shouldReturnEmptyWhenFindByEmailAndStatusGivenNonExistentEmail() {
+            Optional<User> found = userRepository.findByEmailAndStatus("nonexistent@example.com", UserStatus.ACTIVE);
 
-    @Test
-    void shouldReturnEmpty_whenFindByEmailAndStatus_givenMismatchedStatus() {
-        entityManager.persistAndFlush(activeUser);
-
-        Optional<User> found = userRepository.findByEmailAndStatus(activeUser.getEmail(), UserStatus.DISABLED);
-
-        assertThat(found).isEmpty();
+            assertThat(found).isEmpty();
+        }
     }
 }
