@@ -78,6 +78,7 @@ public class Location {
         location.location = geoPointFactory.create(latitude, longitude);
 
         return Location.builder()
+                .user(user)
                 .name(name)
                 .address(address)
                 .geographicArea(geographicArea)
