@@ -70,6 +70,7 @@ build/
 ### AI / Agent Tooling ###
 .agents/
 .gemini/
+.cursor/
 
 ### Environment Variables ###
 .env
