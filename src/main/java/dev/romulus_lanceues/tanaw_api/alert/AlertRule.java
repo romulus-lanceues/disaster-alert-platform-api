@@ -4,9 +4,10 @@ import dev.romulus_lanceues.tanaw_api.enums.DisasterType;
 import dev.romulus_lanceues.tanaw_api.location.Location;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -18,8 +19,9 @@ import java.util.UUID;
 @EntityListeners(AuditingEntityListener.class)
 @Table(name = "alert_rules")
 @Getter
-@Setter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class AlertRule {
 
     @Id
@@ -53,4 +55,18 @@ public class AlertRule {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    public void enable() {
+        this.enabled = true;
+    }
+
+    public void disable() {
+        this.enabled = false;
+    }
+
+    public void updateThresholds(Double minimumMagnitude, Double radiusKm, String minimumSeverity) {
+        this.minimumMagnitude = minimumMagnitude;
+        this.radiusKm = radiusKm;
+        this.minimumSeverity = minimumSeverity;
+    }
 }

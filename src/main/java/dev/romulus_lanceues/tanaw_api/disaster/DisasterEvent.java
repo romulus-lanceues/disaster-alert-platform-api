@@ -3,9 +3,10 @@ package dev.romulus_lanceues.tanaw_api.disaster;
 import dev.romulus_lanceues.tanaw_api.enums.DisasterType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.locationtech.jts.geom.Point;
@@ -26,7 +27,9 @@ import java.util.UUID;
                 )
         })
 @Getter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class DisasterEvent {
 
     @Id

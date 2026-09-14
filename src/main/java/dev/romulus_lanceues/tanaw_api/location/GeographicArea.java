@@ -3,9 +3,10 @@ package dev.romulus_lanceues.tanaw_api.location;
 import dev.romulus_lanceues.tanaw_api.enums.GeographicAreaType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.util.UUID;
 
@@ -20,8 +21,9 @@ import java.util.UUID;
         }
 )
 @Getter
-@Setter
+@Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class GeographicArea {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -44,4 +46,11 @@ public class GeographicArea {
     @Column(nullable = false)
     private boolean active;
 
+    public void deactivate() {
+        this.active = false;
+    }
+
+    public void activate() {
+        this.active = true;
+    }
 }

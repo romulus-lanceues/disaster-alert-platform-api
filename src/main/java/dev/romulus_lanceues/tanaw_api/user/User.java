@@ -2,9 +2,11 @@ package dev.romulus_lanceues.tanaw_api.user;
 
 import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -24,8 +26,9 @@ import java.util.UUID;
         }
 )
 @Getter
-@Setter
-@NoArgsConstructor
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class User {
 
         @Id
@@ -49,4 +52,12 @@ public class User {
         @LastModifiedDate
         @Column(name = "updated_at", nullable = false)
         private Instant updatedAt;
+
+        public void updateStatus(UserStatus status) {
+                this.status = status;
+        }
+        
+        public void updatePassword(String passwordHash) {
+                this.passwordHash = passwordHash;
+        }
 }
