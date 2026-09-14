@@ -1,4 +1,4 @@
-package dev.romulus_lanceues.tanaw_api.config;
+package dev.romulus_lanceues.tanaw_api.shared.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
