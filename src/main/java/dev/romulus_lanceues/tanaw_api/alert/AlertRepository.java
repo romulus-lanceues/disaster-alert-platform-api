@@ -1,6 +1,5 @@
 package dev.romulus_lanceues.tanaw_api.alert;
 
-import dev.romulus_lanceues.tanaw_api.enums.AlertStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

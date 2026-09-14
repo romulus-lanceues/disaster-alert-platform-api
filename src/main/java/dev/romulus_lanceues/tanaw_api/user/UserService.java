@@ -1,6 +1,5 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;

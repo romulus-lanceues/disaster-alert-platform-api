@@ -1,7 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

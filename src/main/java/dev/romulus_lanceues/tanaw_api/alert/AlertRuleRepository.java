@@ -1,6 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.alert;
 
-import dev.romulus_lanceues.tanaw_api.enums.DisasterType;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

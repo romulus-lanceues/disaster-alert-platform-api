@@ -1,6 +1,5 @@
 package dev.romulus_lanceues.tanaw_api.location;
 
-import dev.romulus_lanceues.tanaw_api.enums.GeographicAreaType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

@@ -1,7 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.location;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
-import dev.romulus_lanceues.tanaw_api.enums.GeographicAreaType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

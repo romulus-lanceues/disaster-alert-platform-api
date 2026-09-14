@@ -2,10 +2,9 @@ package dev.romulus_lanceues.tanaw_api.alert;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
-import dev.romulus_lanceues.tanaw_api.enums.AlertStatus;
-import dev.romulus_lanceues.tanaw_api.enums.DisasterType;
-import dev.romulus_lanceues.tanaw_api.enums.GeographicAreaType;
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
+import dev.romulus_lanceues.tanaw_api.location.GeographicAreaType;
+import dev.romulus_lanceues.tanaw_api.user.UserStatus;
 import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
 import dev.romulus_lanceues.tanaw_api.location.GeographicArea;
 import dev.romulus_lanceues.tanaw_api.location.Location;

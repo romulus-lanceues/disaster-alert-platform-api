@@ -1,6 +1,5 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

@@ -1,6 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.alert;
 
-import dev.romulus_lanceues.tanaw_api.enums.DisasterType;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import dev.romulus_lanceues.tanaw_api.location.Location;
 import jakarta.persistence.*;
 import lombok.AccessLevel;

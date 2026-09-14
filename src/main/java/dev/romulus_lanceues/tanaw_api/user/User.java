@@ -1,6 +1,5 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

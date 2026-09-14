@@ -2,13 +2,16 @@ package dev.romulus_lanceues.tanaw_api.notification;
 
 import dev.romulus_lanceues.tanaw_api.alert.Alert;
 import dev.romulus_lanceues.tanaw_api.alert.AlertRule;
+import dev.romulus_lanceues.tanaw_api.alert.AlertStatus;
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
-import dev.romulus_lanceues.tanaw_api.enums.*;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
 import dev.romulus_lanceues.tanaw_api.location.GeographicArea;
+import dev.romulus_lanceues.tanaw_api.location.GeographicAreaType;
 import dev.romulus_lanceues.tanaw_api.location.Location;
 import dev.romulus_lanceues.tanaw_api.user.User;
+import dev.romulus_lanceues.tanaw_api.user.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

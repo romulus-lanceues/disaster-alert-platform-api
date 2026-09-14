@@ -1,8 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.location;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
-import dev.romulus_lanceues.tanaw_api.enums.GeographicAreaType;
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
+import dev.romulus_lanceues.tanaw_api.user.UserStatus;
 import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
 import dev.romulus_lanceues.tanaw_api.user.User;
 import org.junit.jupiter.api.BeforeEach;
