@@ -1,8 +1,6 @@
-package dev.romulus_lanceues.tanaw_api;
+package dev.romulus_lanceues.tanaw_api.disaster;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
-import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
-import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventRepository;
 import dev.romulus_lanceues.tanaw_api.enums.DisasterType;
 import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
 import org.junit.jupiter.api.BeforeEach;
