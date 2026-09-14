@@ -116,6 +116,24 @@
 			<scope>test</scope>
 		</dependency>
 
+		<!--Spring Security dependencies-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!--Bouncy Castle Dependency Used by Argon2 -->
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcprov-jdk18on</artifactId>
+			<version>1.85.2</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>
