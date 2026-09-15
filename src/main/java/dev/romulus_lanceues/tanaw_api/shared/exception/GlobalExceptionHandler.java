@@ -1,5 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.shared.exception;
 
+import dev.romulus_lanceues.tanaw_api.location.GeographicAreaNotFoundException;
+import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
 import dev.romulus_lanceues.tanaw_api.user.UserAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +40,34 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
 
         problem.setTitle("User Not Found");
+
+        return problem;
+    }
+
+    @ExceptionHandler(LocationNotFoundException.class)
+    public ProblemDetail handleException(LocationNotFoundException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Location Not Found");
+
+        return problem;
+    }
+
+    @ExceptionHandler(GeographicAreaNotFoundException.class)
+    public ProblemDetail handleException(GeographicAreaNotFoundException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Geographic Area Not Found");
 
         return problem;
     }
