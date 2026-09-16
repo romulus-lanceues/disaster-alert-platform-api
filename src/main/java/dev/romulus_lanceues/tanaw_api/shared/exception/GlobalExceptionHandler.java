@@ -1,5 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.shared.exception;
 
+import dev.romulus_lanceues.tanaw_api.alert.AlertRuleNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
 import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
 import dev.romulus_lanceues.tanaw_api.user.UserAlreadyExistsException;
@@ -68,6 +69,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
 
         problem.setTitle("Geographic Area Not Found");
+
+        return problem;
+    }
+
+    @ExceptionHandler(AlertRuleNotFoundException.class)
+    public ProblemDetail handleException(AlertRuleNotFoundException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Alert Rule Not Found");
 
         return problem;
     }
