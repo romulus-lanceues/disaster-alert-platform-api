@@ -1,5 +1,8 @@
 package dev.romulus_lanceues.tanaw_api.location;
 
+import dev.romulus_lanceues.tanaw_api.geo.area.GeographicArea;
+import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
+import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaRepository;
 import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
 import dev.romulus_lanceues.tanaw_api.user.User;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;

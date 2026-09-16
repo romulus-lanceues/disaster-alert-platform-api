@@ -1,6 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.shared.exception;
 
-import dev.romulus_lanceues.tanaw_api.location.GeographicAreaNotFoundException;
+import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
 import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
 import dev.romulus_lanceues.tanaw_api.user.UserAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;

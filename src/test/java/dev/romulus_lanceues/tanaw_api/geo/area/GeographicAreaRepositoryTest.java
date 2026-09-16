@@ -1,4 +1,4 @@
-package dev.romulus_lanceues.tanaw_api.location;
+package dev.romulus_lanceues.tanaw_api.geo.area;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
 import org.junit.jupiter.api.DisplayName;
