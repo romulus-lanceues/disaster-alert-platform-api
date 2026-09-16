@@ -1,4 +1,4 @@
-package dev.romulus_lanceues.tanaw_api.jts;
+package dev.romulus_lanceues.tanaw_api.location;
 
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;

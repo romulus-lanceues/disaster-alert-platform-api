@@ -1,7 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.disaster;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
-import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
+import dev.romulus_lanceues.tanaw_api.location.GeoPointFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
