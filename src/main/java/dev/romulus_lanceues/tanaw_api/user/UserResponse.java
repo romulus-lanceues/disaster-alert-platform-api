@@ -10,4 +10,18 @@ public record UserResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
+
+    public static UserResponse from(User user) {
+        if (user == null) {
+            return null;
+        }
+
+        return new UserResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getStatus(),
+                user.getCreatedAt(),
+                user.getUpdatedAt()
+        );
+    }
 }

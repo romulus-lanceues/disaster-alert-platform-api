@@ -19,7 +19,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
-    public User createUser(String email, String rawPassword) {
+    public UserResponse createUser(String email, String rawPassword) {
         if (userRepository.existsByEmail(email)) {
             throw new UserAlreadyExistsException("Email is already registered: " + email);
         }
@@ -34,17 +34,17 @@ public class UserService {
 
         log.info("User created: userId = {}", savedUser.getId());
 
-        return savedUser;
+        return UserResponse.from(savedUser);
     }
 
 
-    public Optional<User> findById(UUID id) {
-        return userRepository.findById(id);
+    public Optional<UserResponse> findById(UUID id) {
+        return userRepository.findById(id).map(UserResponse::from);
     }
 
 
-    public Optional<User> findActiveByEmail(String email) {
-        return userRepository.findByEmailAndStatus(email, UserStatus.ACTIVE);
+    public Optional<UserResponse> findActiveByEmail(String email) {
+        return userRepository.findByEmailAndStatus(email, UserStatus.ACTIVE).map(UserResponse::from);
     }
 
 
