@@ -96,8 +96,8 @@ class AlertRuleServiceTest {
     class CreateAlertRule {
 
         @Test
-        @DisplayName("should create and return alert rule when location exists for user")
-        void shouldCreateAndReturnAlertRule_whenLocationExistsForUser() {
+        @DisplayName("should create and return alert rule response when location exists for user")
+        void shouldCreateAndReturnAlertRuleResponse_whenLocationExistsForUser() {
 
             UUID userId = UUID.randomUUID();
             UUID locationId = UUID.randomUUID();
@@ -115,20 +115,21 @@ class AlertRuleServiceTest {
                     .willReturn(savedRule);
 
 
-            AlertRule result = alertRuleService.createAlertRule(request);
+            AlertRuleResponse result = alertRuleService.createAlertRule(request);
 
             assertThat(result).isNotNull();
-            assertThat(result.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-            assertThat(result.getMinimumMagnitude()).isEqualTo(5.0);
-            assertThat(result.getRadiusKm()).isEqualTo(50.0);
-            assertThat(result.getMinimumSeverity()).isEqualTo("MODERATE");
-            assertThat(result.isEnabled()).isTrue();
-            assertThat(result.getLocation().getId()).isEqualTo(locationId);
+            assertThat(result.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
+            assertThat(result.minimumMagnitude()).isEqualTo(5.0);
+            assertThat(result.radiusKm()).isEqualTo(50.0);
+            assertThat(result.minimumSeverity()).isEqualTo("MODERATE");
+            assertThat(result.enabled()).isTrue();
+            assertThat(result.locationId()).isEqualTo(locationId);
+            assertThat(result.locationName()).isEqualTo("Home");
         }
 
         @Test
-        @DisplayName("should create alert rule with null optional thresholds")
-        void shouldCreateAlertRule_withNullOptionalThresholds() {
+        @DisplayName("should create alert rule response with null optional thresholds")
+        void shouldCreateAlertRuleResponse_withNullOptionalThresholds() {
 
             UUID userId = UUID.randomUUID();
             UUID locationId = UUID.randomUUID();
@@ -151,14 +152,14 @@ class AlertRuleServiceTest {
                     .willReturn(savedRule);
 
 
-            AlertRule result = alertRuleService.createAlertRule(request);
+            AlertRuleResponse result = alertRuleService.createAlertRule(request);
 
 
             assertThat(result).isNotNull();
-            assertThat(result.getDisasterType()).isEqualTo(DisasterType.TYPHOON);
-            assertThat(result.getMinimumMagnitude()).isNull();
-            assertThat(result.getRadiusKm()).isNull();
-            assertThat(result.getMinimumSeverity()).isNull();
+            assertThat(result.disasterType()).isEqualTo(DisasterType.TYPHOON);
+            assertThat(result.minimumMagnitude()).isNull();
+            assertThat(result.radiusKm()).isNull();
+            assertThat(result.minimumSeverity()).isNull();
         }
 
         @Test
@@ -189,8 +190,8 @@ class AlertRuleServiceTest {
     class GetAlertRule {
 
         @Test
-        @DisplayName("should return alert rule when it belongs to the user")
-        void shouldReturnAlertRule_whenItBelongsToUser() {
+        @DisplayName("should return alert rule response when it belongs to the user")
+        void shouldReturnAlertRuleResponse_whenItBelongsToUser() {
 
             UUID userId = UUID.randomUUID();
             UUID alertRuleId = UUID.randomUUID();
@@ -202,11 +203,11 @@ class AlertRuleServiceTest {
                     .willReturn(Optional.of(alertRule));
 
 
-            AlertRule result = alertRuleService.getAlertRule(alertRuleId, userId);
+            AlertRuleResponse result = alertRuleService.getAlertRule(alertRuleId, userId);
 
             assertThat(result).isNotNull();
-            assertThat(result.getId()).isEqualTo(alertRuleId);
-            assertThat(result.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
+            assertThat(result.id()).isEqualTo(alertRuleId);
+            assertThat(result.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
         }
 
         @Test
@@ -233,8 +234,8 @@ class AlertRuleServiceTest {
     class GetAlertRulesByUser {
 
         @Test
-        @DisplayName("should return all alert rules for a user")
-        void shouldReturnAllAlertRules_forUser() {
+        @DisplayName("should return all alert rule responses for a user")
+        void shouldReturnAllAlertRuleResponses_forUser() {
 
             UUID userId = UUID.randomUUID();
             User user = buildUser(userId);
@@ -249,12 +250,12 @@ class AlertRuleServiceTest {
                     .willReturn(rules);
 
 
-            List<AlertRule> result = alertRuleService.getAlertRulesByUser(userId);
+            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByUser(userId);
 
 
             assertThat(result).hasSize(2);
-            assertThat(result).allSatisfy(rule ->
-                    assertThat(rule.getLocation().getUser().getId()).isEqualTo(userId));
+            assertThat(result).allSatisfy(response ->
+                    assertThat(response.locationId()).isEqualTo(location.getId()));
         }
 
         @Test
@@ -266,7 +267,7 @@ class AlertRuleServiceTest {
             given(alertRuleRepository.findByLocationUserId(userId))
                     .willReturn(List.of());
 
-            List<AlertRule> result = alertRuleService.getAlertRulesByUser(userId);
+            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByUser(userId);
 
             assertThat(result).isEmpty();
         }
@@ -279,8 +280,8 @@ class AlertRuleServiceTest {
     class GetAlertRulesByLocation {
 
         @Test
-        @DisplayName("should return all alert rules for a location")
-        void shouldReturnAllAlertRules_forLocation() {
+        @DisplayName("should return all alert rule responses for a location")
+        void shouldReturnAllAlertRuleResponses_forLocation() {
 
             UUID locationId = UUID.randomUUID();
             User user = buildUser(UUID.randomUUID());
@@ -295,12 +296,12 @@ class AlertRuleServiceTest {
                     .willReturn(rules);
 
 
-            List<AlertRule> result = alertRuleService.getAlertRulesByLocation(locationId);
+            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByLocation(locationId);
 
 
             assertThat(result).hasSize(2);
-            assertThat(result).allSatisfy(rule ->
-                    assertThat(rule.getLocation().getId()).isEqualTo(locationId));
+            assertThat(result).allSatisfy(response ->
+                    assertThat(response.locationId()).isEqualTo(locationId));
         }
 
         @Test
@@ -312,7 +313,7 @@ class AlertRuleServiceTest {
             given(alertRuleRepository.findByLocationId(locationId))
                     .willReturn(List.of());
 
-            List<AlertRule> result = alertRuleService.getAlertRulesByLocation(locationId);
+            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByLocation(locationId);
 
             assertThat(result).isEmpty();
         }
@@ -325,9 +326,9 @@ class AlertRuleServiceTest {
     class UpdateThresholds {
 
         @Test
-        @DisplayName("should update thresholds and return the saved alert rule")
-        void shouldUpdateThresholds_andReturnSavedAlertRule() {
-            // Arrange
+        @DisplayName("should update thresholds and return the saved alert rule response")
+        void shouldUpdateThresholds_andReturnSavedAlertRuleResponse() {
+
             UUID userId = UUID.randomUUID();
             UUID alertRuleId = UUID.randomUUID();
             User user = buildUser(userId);
@@ -339,13 +340,13 @@ class AlertRuleServiceTest {
             given(alertRuleRepository.save(alertRule))
                     .willReturn(alertRule);
 
-            AlertRule result = alertRuleService.updateThresholds(
+            AlertRuleResponse result = alertRuleService.updateThresholds(
                     alertRuleId, userId, 7.0, 100.0, "SEVERE");
 
             assertThat(result).isNotNull();
-            assertThat(result.getMinimumMagnitude()).isEqualTo(7.0);
-            assertThat(result.getRadiusKm()).isEqualTo(100.0);
-            assertThat(result.getMinimumSeverity()).isEqualTo("SEVERE");
+            assertThat(result.minimumMagnitude()).isEqualTo(7.0);
+            assertThat(result.radiusKm()).isEqualTo(100.0);
+            assertThat(result.minimumSeverity()).isEqualTo("SEVERE");
         }
 
         @Test
@@ -363,12 +364,12 @@ class AlertRuleServiceTest {
             given(alertRuleRepository.save(alertRule))
                     .willReturn(alertRule);
 
-            AlertRule result = alertRuleService.updateThresholds(
+            AlertRuleResponse result = alertRuleService.updateThresholds(
                     alertRuleId, userId, null, null, null);
 
-            assertThat(result.getMinimumMagnitude()).isNull();
-            assertThat(result.getRadiusKm()).isNull();
-            assertThat(result.getMinimumSeverity()).isNull();
+            assertThat(result.minimumMagnitude()).isNull();
+            assertThat(result.radiusKm()).isNull();
+            assertThat(result.minimumSeverity()).isNull();
         }
 
         @Test
@@ -396,8 +397,8 @@ class AlertRuleServiceTest {
     class EnableAlertRule {
 
         @Test
-        @DisplayName("should enable the alert rule and return it")
-        void shouldEnableAlertRule_andReturnIt() {
+        @DisplayName("should enable the alert rule and return the response")
+        void shouldEnableAlertRule_andReturnResponse() {
 
             UUID userId = UUID.randomUUID();
             UUID alertRuleId = UUID.randomUUID();
@@ -416,10 +417,10 @@ class AlertRuleServiceTest {
             given(alertRuleRepository.save(alertRule))
                     .willReturn(alertRule);
 
-            AlertRule result = alertRuleService.enableAlertRule(alertRuleId, userId);
+            AlertRuleResponse result = alertRuleService.enableAlertRule(alertRuleId, userId);
 
             assertThat(result).isNotNull();
-            assertThat(result.isEnabled()).isTrue();
+            assertThat(result.enabled()).isTrue();
         }
 
         @Test
@@ -447,8 +448,8 @@ class AlertRuleServiceTest {
     class DisableAlertRule {
 
         @Test
-        @DisplayName("should disable the alert rule and return it")
-        void shouldDisableAlertRule_andReturnIt() {
+        @DisplayName("should disable the alert rule and return the response")
+        void shouldDisableAlertRule_andReturnResponse() {
 
             UUID userId = UUID.randomUUID();
             UUID alertRuleId = UUID.randomUUID();
@@ -461,10 +462,10 @@ class AlertRuleServiceTest {
             given(alertRuleRepository.save(alertRule))
                     .willReturn(alertRule);
 
-            AlertRule result = alertRuleService.disableAlertRule(alertRuleId, userId);
+            AlertRuleResponse result = alertRuleService.disableAlertRule(alertRuleId, userId);
 
             assertThat(result).isNotNull();
-            assertThat(result.isEnabled()).isFalse();
+            assertThat(result.enabled()).isFalse();
         }
 
         @Test

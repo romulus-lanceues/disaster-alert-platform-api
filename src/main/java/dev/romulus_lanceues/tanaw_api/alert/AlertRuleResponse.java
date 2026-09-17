@@ -16,4 +16,20 @@ public record AlertRuleResponse(
         String minimumSeverity,
         Instant createdAt,
         Instant updatedAt
-) {}
+) {
+
+    public static AlertRuleResponse from(AlertRule alertRule) {
+        return new AlertRuleResponse(
+                alertRule.getId(),
+                alertRule.getLocation().getId(),
+                alertRule.getLocation().getName(),
+                alertRule.getDisasterType(),
+                alertRule.isEnabled(),
+                alertRule.getMinimumMagnitude(),
+                alertRule.getRadiusKm(),
+                alertRule.getMinimumSeverity(),
+                alertRule.getCreatedAt(),
+                alertRule.getUpdatedAt()
+        );
+    }
+}
