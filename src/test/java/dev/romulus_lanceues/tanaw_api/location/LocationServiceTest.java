@@ -112,12 +112,12 @@ class LocationServiceTest {
             given(geoPointFactory.create(14.60, 120.98)).willReturn(point);
             given(locationRepository.save(any(Location.class))).willReturn(savedLocation);
 
-            Location result = locationService.createLocation(request);
+            LocationResponse result = locationService.createLocation(request);
 
             assertThat(result).isNotNull();
-            assertThat(result.getName()).isEqualTo("Home");
-            assertThat(result.getUser().getId()).isEqualTo(userId);
-            assertThat(result.getGeographicArea().getPsgcCode()).isEqualTo("137600000");
+            assertThat(result.name()).isEqualTo("Home");
+            assertThat(result.userId()).isEqualTo(userId);
+            assertThat(result.geographicArea().psgcCode()).isEqualTo("137600000");
         }
 
         @Test
@@ -178,11 +178,11 @@ class LocationServiceTest {
             given(userRepository.existsById(userId)).willReturn(true);
             given(locationRepository.findByUserId(userId)).willReturn(locations);
 
-            List<Location> result = locationService.getLocationsByUser(userId);
+            List<LocationResponse> result = locationService.getLocationsByUser(userId);
 
             assertThat(result).hasSize(2);
             assertThat(result).allSatisfy(loc ->
-                    assertThat(loc.getUser().getId()).isEqualTo(userId));
+                    assertThat(loc.userId()).isEqualTo(userId));
         }
 
         @Test
@@ -194,7 +194,7 @@ class LocationServiceTest {
             given(userRepository.existsById(userId)).willReturn(true);
             given(locationRepository.findByUserId(userId)).willReturn(List.of());
 
-            List<Location> result = locationService.getLocationsByUser(userId);
+            List<LocationResponse> result = locationService.getLocationsByUser(userId);
 
             assertThat(result).isEmpty();
         }
@@ -233,11 +233,11 @@ class LocationServiceTest {
             given(locationRepository.findByIdAndUserId(locationId, userId))
                     .willReturn(Optional.of(location));
 
-            Location result = locationService.getLocation(locationId, userId);
+            LocationResponse result = locationService.getLocation(locationId, userId);
 
             assertThat(result).isNotNull();
-            assertThat(result.getId()).isEqualTo(locationId);
-            assertThat(result.getUser().getId()).isEqualTo(userId);
+            assertThat(result.id()).isEqualTo(locationId);
+            assertThat(result.userId()).isEqualTo(userId);
         }
 
         @Test
