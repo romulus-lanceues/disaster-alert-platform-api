@@ -1,5 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.shared.exception;
 
+import dev.romulus_lanceues.tanaw_api.alert.AlertAlreadyExistsException;
+import dev.romulus_lanceues.tanaw_api.alert.AlertNotFoundException;
 import dev.romulus_lanceues.tanaw_api.alert.AlertRuleNotFoundException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventNotFoundException;
@@ -113,6 +115,34 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
 
         problem.setTitle("Disaster Event Already Exists");
+
+        return problem;
+    }
+
+    @ExceptionHandler(AlertNotFoundException.class)
+    public ProblemDetail handleException(AlertNotFoundException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Alert Not Found");
+
+        return problem;
+    }
+
+    @ExceptionHandler(AlertAlreadyExistsException.class)
+    public ProblemDetail handleException(AlertAlreadyExistsException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Alert Already Exists");
 
         return problem;
     }

@@ -30,6 +30,7 @@ import org.testcontainers.utility.DockerImageName;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -246,6 +247,36 @@ class AlertRepositoryTest {
             List<Alert> alerts = alertRepository.findByDisasterEventId(UUID.randomUUID());
 
             assertThat(alerts).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("findAlertRuleIdsByDisasterEventId")
+    class FindAlertRuleIdsByDisasterEventId {
+
+        @Test
+        @DisplayName("should return set of alert rule IDs associated with specified disaster event")
+        void shouldReturnSetOfAlertRuleIds() {
+            AlertRule secondRule = persistAlertRule(primaryLocation, DisasterType.EARTHQUAKE, 4.0, 30.0);
+            DisasterEvent anotherEvent = persistDisasterEvent("PHIVOLCS", "phi-event-003", DisasterType.EARTHQUAKE, 4.8, 14.1, 121.1);
+
+            persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PENDING);
+            persistAlert(primaryDisasterEvent, secondRule, AlertStatus.PROCESSED);
+            persistAlert(anotherEvent, primaryRule, AlertStatus.PENDING);
+
+            Set<UUID> ruleIds = alertRepository.findAlertRuleIdsByDisasterEventId(primaryDisasterEvent.getId());
+
+            assertThat(ruleIds)
+                    .hasSize(2)
+                    .containsExactlyInAnyOrder(primaryRule.getId(), secondRule.getId());
+        }
+
+        @Test
+        @DisplayName("should return empty set when no alerts exist for disaster event")
+        void shouldReturnEmptySetWhenNoAlertsExistForDisasterEvent() {
+            Set<UUID> ruleIds = alertRepository.findAlertRuleIdsByDisasterEventId(UUID.randomUUID());
+
+            assertThat(ruleIds).isEmpty();
         }
     }
 
