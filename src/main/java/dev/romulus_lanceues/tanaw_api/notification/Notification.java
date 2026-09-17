@@ -74,4 +74,8 @@ public class Notification {
         this.status = status;
         this.failureReason = failureReason;
     }
+
+    public void updateStatus(NotificationStatus status) {
+        this.status = status;
+    }
 }

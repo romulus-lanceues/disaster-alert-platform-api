@@ -576,6 +576,66 @@ public class NotificationRepositoryTest {
     }
 
     @Nested
+    @DisplayName("findByAlertAlertRuleLocationUserIdAndStatus")
+    class FindByAlertAlertRuleLocationUserIdAndStatus {
+
+        @Test
+        @DisplayName("should return paginated notifications matching both user ID and status")
+        void shouldFindPagedNotificationsForUserFilteredByStatus() {
+            User otherUser = persistUser("other@example.com");
+            Location otherLocation = persistLocation(otherUser, "Other Office", 14.5500, 121.0300);
+            AlertRule otherRule = persistAlertRule(otherLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
+            Alert otherAlert = persistAlert(primaryDisasterEvent, otherRule, AlertStatus.PENDING);
+
+            Location loc2 = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
+            AlertRule rule2 = persistAlertRule(loc2, DisasterType.EARTHQUAKE, 5.0, 50.0);
+            Alert alert2 = persistAlert(primaryDisasterEvent, rule2, AlertStatus.PENDING);
+
+            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
+            Notification notif2 = persistNotification(primaryAlert, NotificationChannel.DISCORD, NotificationStatus.SENT);
+            Notification notif3 = persistNotification(alert2, NotificationChannel.TELEGRAM, NotificationStatus.PENDING);
+            persistNotification(otherAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
+
+            Page<Notification> pendingPage = notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(
+                    primaryUser.getId(),
+                    NotificationStatus.PENDING,
+                    PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "createdAt"))
+            );
+
+            assertThat(pendingPage.getTotalElements()).isEqualTo(2);
+            assertThat(pendingPage.getContent())
+                    .extracting(Notification::getId)
+                    .containsExactly(notif1.getId(), notif3.getId());
+
+            Page<Notification> sentPage = notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(
+                    primaryUser.getId(),
+                    NotificationStatus.SENT,
+                    PageRequest.of(0, 10)
+            );
+
+            assertThat(sentPage.getTotalElements()).isEqualTo(1);
+            assertThat(sentPage.getContent())
+                    .extracting(Notification::getId)
+                    .containsExactly(notif2.getId());
+        }
+
+        @Test
+        @DisplayName("should return empty page when user has no notifications with specified status")
+        void shouldReturnEmptyPageWhenNoNotificationsMatchStatusForUser() {
+            persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
+
+            Page<Notification> page = notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(
+                    primaryUser.getId(),
+                    NotificationStatus.CANCELLED,
+                    PageRequest.of(0, 10)
+            );
+
+            assertThat(page.getTotalElements()).isZero();
+            assertThat(page.getContent()).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("findPendingForDispatch")
     class FindPendingForDispatch {
 
@@ -684,6 +744,12 @@ public class NotificationRepositoryTest {
             assertThat(fetchedLocation.getName()).isEqualTo("Home");
             assertThat(fetchedLocation.getLatitude()).isEqualTo(14.5995);
             assertThat(fetchedLocation.getLongitude()).isEqualTo(120.9842);
+
+            // Verify location user
+            User fetchedUser = fetchedLocation.getUser();
+            assertThat(fetchedUser).isNotNull();
+            assertThat(fetchedUser.getId()).isEqualTo(primaryUser.getId());
+            assertThat(fetchedUser.getEmail()).isEqualTo(primaryUser.getEmail());
         }
 
         @Test

@@ -27,6 +27,8 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     Page<Notification> findByAlertAlertRuleLocationUserId(UUID userId, Pageable pageable);
 
+    Page<Notification> findByAlertAlertRuleLocationUserIdAndStatus(UUID userId, NotificationStatus status, Pageable pageable);
+
     /**
      * Finds notifications that are pending / retryable for dispatch workers.
      * Eagerly fetches alert and disaster event details.
@@ -46,14 +48,15 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     );
 
     /**
-     * Eagerly fetches notification with alert, disaster event, alert rule, and location.
+     * Eagerly fetches notification with alert, disaster event, alert rule, location, and owner user.
      */
     @Query("""
             SELECT n FROM Notification n
             JOIN FETCH n.alert a
             JOIN FETCH a.disasterEvent
             JOIN FETCH a.alertRule ar
-            JOIN FETCH ar.location
+            JOIN FETCH ar.location l
+            JOIN FETCH l.user
             WHERE n.id = :id
             """)
     Optional<Notification> findByIdWithDetails(@Param("id") UUID id);

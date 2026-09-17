@@ -7,6 +7,8 @@ import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventAlreadyExistsExcepti
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
 import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
+import dev.romulus_lanceues.tanaw_api.notification.NotificationAlreadyExistsException;
+import dev.romulus_lanceues.tanaw_api.notification.NotificationNotFoundException;
 import dev.romulus_lanceues.tanaw_api.user.UserAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;
 import lombok.extern.slf4j.Slf4j;
@@ -143,6 +145,34 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
 
         problem.setTitle("Alert Already Exists");
+
+        return problem;
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ProblemDetail handleException(NotificationNotFoundException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Notification Not Found");
+
+        return problem;
+    }
+
+    @ExceptionHandler(NotificationAlreadyExistsException.class)
+    public ProblemDetail handleException(NotificationAlreadyExistsException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Notification Already Exists");
 
         return problem;
     }
