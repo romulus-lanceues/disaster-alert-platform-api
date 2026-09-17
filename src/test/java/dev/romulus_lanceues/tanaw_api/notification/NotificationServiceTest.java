@@ -143,14 +143,17 @@ class NotificationServiceTest {
             given(notificationRepository.save(any(Notification.class)))
                     .willAnswer(inv -> inv.getArgument(0));
 
-            Notification result = notificationService.createNotification(alert, NotificationChannel.EMAIL, "user@example.com");
+            NotificationResponse result = notificationService.createNotification(alert, NotificationChannel.EMAIL, "user@example.com");
 
             assertThat(result).isNotNull();
-            assertThat(result.getAlert()).isEqualTo(alert);
-            assertThat(result.getChannel()).isEqualTo(NotificationChannel.EMAIL);
-            assertThat(result.getDestination()).isEqualTo("user@example.com");
-            assertThat(result.getStatus()).isEqualTo(NotificationStatus.PENDING);
-            assertThat(result.getAttemptCount()).isZero();
+            assertThat(result.alertId()).isEqualTo(alert.getId());
+            assertThat(result.channel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(result.destination()).isEqualTo("user@example.com");
+            assertThat(result.status()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(result.attemptCount()).isZero();
+            assertThat(result.locationName()).isEqualTo("Home");
+            assertThat(result.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
+            assertThat(result.magnitude()).isEqualTo(6.2);
 
             ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
             then(notificationRepository).should().save(captor.capture());
@@ -182,16 +185,17 @@ class NotificationServiceTest {
     class GetNotification {
 
         @Test
-        @DisplayName("should return notification when found by id")
+        @DisplayName("should return notification response when found by id")
         void shouldReturnNotificationWhenFound() {
             UUID notifId = UUID.randomUUID();
             Notification notification = Notification.builder().id(notifId).build();
 
             given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
 
-            Notification result = notificationService.getNotification(notifId);
+            NotificationResponse result = notificationService.getNotification(notifId);
 
-            assertThat(result).isEqualTo(notification);
+            assertThat(result).isNotNull();
+            assertThat(result.id()).isEqualTo(notifId);
         }
 
         @Test
@@ -212,16 +216,26 @@ class NotificationServiceTest {
     class GetNotificationWithDetails {
 
         @Test
-        @DisplayName("should return notification with details when found")
+        @DisplayName("should return notification response with details when found")
         void shouldReturnNotificationWithDetailsWhenFound() {
+            UUID userId = UUID.randomUUID();
+            User user = buildUser(userId);
+            Location location = buildLocation(UUID.randomUUID(), user);
+            AlertRule rule = buildAlertRule(UUID.randomUUID(), location);
+            DisasterEvent event = buildDisasterEvent(UUID.randomUUID());
+            Alert alert = buildAlert(UUID.randomUUID(), event, rule);
             UUID notifId = UUID.randomUUID();
-            Notification notification = Notification.builder().id(notifId).build();
+            Notification notification = buildNotification(notifId, alert, NotificationChannel.EMAIL, "user@example.com");
 
             given(notificationRepository.findByIdWithDetails(notifId)).willReturn(Optional.of(notification));
 
-            Notification result = notificationService.getNotificationWithDetails(notifId);
+            NotificationResponse result = notificationService.getNotificationWithDetails(notifId);
 
-            assertThat(result).isEqualTo(notification);
+            assertThat(result).isNotNull();
+            assertThat(result.id()).isEqualTo(notifId);
+            assertThat(result.alertId()).isEqualTo(alert.getId());
+            assertThat(result.locationName()).isEqualTo("Home");
+            assertThat(result.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
         }
 
         @Test
@@ -242,7 +256,7 @@ class NotificationServiceTest {
     class GetNotificationForUser {
 
         @Test
-        @DisplayName("should return notification when owned by user")
+        @DisplayName("should return notification response when owned by user")
         void shouldReturnNotificationWhenOwnedByUser() {
             UUID userId = UUID.randomUUID();
             User user = buildUser(userId);
@@ -255,9 +269,11 @@ class NotificationServiceTest {
 
             given(notificationRepository.findByIdWithDetails(notifId)).willReturn(Optional.of(notification));
 
-            Notification result = notificationService.getNotificationForUser(notifId, userId);
+            NotificationResponse result = notificationService.getNotificationForUser(notifId, userId);
 
-            assertThat(result).isEqualTo(notification);
+            assertThat(result).isNotNull();
+            assertThat(result.id()).isEqualTo(notifId);
+            assertThat(result.locationId()).isEqualTo(location.getId());
         }
 
         @Test
@@ -299,7 +315,7 @@ class NotificationServiceTest {
     class GetNotificationsByUser {
 
         @Test
-        @DisplayName("should return paginated notifications for user")
+        @DisplayName("should return paginated notification responses for user")
         void shouldReturnPaginatedNotificationsForUser() {
             UUID userId = UUID.randomUUID();
             Pageable pageable = PageRequest.of(0, 10);
@@ -308,9 +324,10 @@ class NotificationServiceTest {
 
             given(notificationRepository.findByAlertAlertRuleLocationUserId(userId, pageable)).willReturn(page);
 
-            Page<Notification> result = notificationService.getNotificationsByUser(userId, pageable);
+            Page<NotificationResponse> result = notificationService.getNotificationsByUser(userId, pageable);
 
             assertThat(result.getContent()).hasSize(1);
+            assertThat(result.getContent().get(0).id()).isEqualTo(content.get(0).getId());
             assertThat(result.getTotalElements()).isEqualTo(1);
         }
     }
@@ -320,7 +337,7 @@ class NotificationServiceTest {
     class GetNotificationsByUserAndStatus {
 
         @Test
-        @DisplayName("should return paginated notifications for user and status")
+        @DisplayName("should return paginated notification responses for user and status")
         void shouldReturnPaginatedNotificationsForUserAndStatus() {
             UUID userId = UUID.randomUUID();
             Pageable pageable = PageRequest.of(0, 10);
@@ -330,10 +347,10 @@ class NotificationServiceTest {
             given(notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(userId, NotificationStatus.SENT, pageable))
                     .willReturn(page);
 
-            Page<Notification> result = notificationService.getNotificationsByUserAndStatus(userId, NotificationStatus.SENT, pageable);
+            Page<NotificationResponse> result = notificationService.getNotificationsByUserAndStatus(userId, NotificationStatus.SENT, pageable);
 
             assertThat(result.getContent()).hasSize(1);
-            assertThat(result.getContent().get(0).getStatus()).isEqualTo(NotificationStatus.SENT);
+            assertThat(result.getContent().get(0).status()).isEqualTo(NotificationStatus.SENT);
         }
     }
 
@@ -342,7 +359,7 @@ class NotificationServiceTest {
     class GetNotificationsByAlert {
 
         @Test
-        @DisplayName("should return notifications for given alert")
+        @DisplayName("should return notification responses for given alert")
         void shouldReturnNotificationsForAlert() {
             UUID alertId = UUID.randomUUID();
             List<Notification> notifications = List.of(
@@ -352,9 +369,11 @@ class NotificationServiceTest {
 
             given(notificationRepository.findByAlertId(alertId)).willReturn(notifications);
 
-            List<Notification> result = notificationService.getNotificationsByAlert(alertId);
+            List<NotificationResponse> result = notificationService.getNotificationsByAlert(alertId);
 
             assertThat(result).hasSize(2);
+            assertThat(result.get(0).channel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(result.get(1).channel()).isEqualTo(NotificationChannel.DISCORD);
         }
     }
 
@@ -363,7 +382,7 @@ class NotificationServiceTest {
     class GetNotificationsByStatus {
 
         @Test
-        @DisplayName("should return paginated notifications by status")
+        @DisplayName("should return paginated notification responses by status")
         void shouldReturnPaginatedNotificationsByStatus() {
             Pageable pageable = PageRequest.of(0, 5);
             List<Notification> notifications = List.of(
@@ -373,9 +392,10 @@ class NotificationServiceTest {
 
             given(notificationRepository.findByStatus(NotificationStatus.PENDING, pageable)).willReturn(page);
 
-            Page<Notification> result = notificationService.getNotificationsByStatus(NotificationStatus.PENDING, pageable);
+            Page<NotificationResponse> result = notificationService.getNotificationsByStatus(NotificationStatus.PENDING, pageable);
 
             assertThat(result.getContent()).hasSize(1);
+            assertThat(result.getContent().get(0).status()).isEqualTo(NotificationStatus.PENDING);
             assertThat(result.getTotalElements()).isEqualTo(1);
         }
     }
@@ -385,7 +405,7 @@ class NotificationServiceTest {
     class GetPendingNotificationsForDispatch {
 
         @Test
-        @DisplayName("should return pending notifications for dispatch under max attempts")
+        @DisplayName("should return pending notification responses for dispatch under max attempts")
         void shouldReturnPendingNotificationsForDispatch() {
             List<Notification> pending = List.of(
                     Notification.builder().id(UUID.randomUUID()).attemptCount(0).status(NotificationStatus.PENDING).build(),
@@ -394,9 +414,12 @@ class NotificationServiceTest {
 
             given(notificationRepository.findPendingForDispatch(NotificationStatus.PENDING, 3)).willReturn(pending);
 
-            List<Notification> result = notificationService.getPendingNotificationsForDispatch(3);
+            List<NotificationResponse> result = notificationService.getPendingNotificationsForDispatch(3);
 
             assertThat(result).hasSize(2);
+            assertThat(result.get(0).status()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(result.get(0).attemptCount()).isZero();
+            assertThat(result.get(1).attemptCount()).isEqualTo(1);
         }
     }
 
@@ -417,10 +440,10 @@ class NotificationServiceTest {
             given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
             given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
 
-            Notification result = notificationService.markAsProcessing(notifId);
+            NotificationResponse result = notificationService.markAsProcessing(notifId);
 
-            assertThat(result.getStatus()).isEqualTo(NotificationStatus.PROCESSING);
-            assertThat(result.getAttemptCount()).isEqualTo(1);
+            assertThat(result.status()).isEqualTo(NotificationStatus.PROCESSING);
+            assertThat(result.attemptCount()).isEqualTo(1);
         }
     }
 
@@ -440,10 +463,10 @@ class NotificationServiceTest {
             given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
             given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
 
-            Notification result = notificationService.recordSuccess(notifId);
+            NotificationResponse result = notificationService.recordSuccess(notifId);
 
-            assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
-            assertThat(result.getSentAt()).isNotNull();
+            assertThat(result.status()).isEqualTo(NotificationStatus.SENT);
+            assertThat(result.sentAt()).isNotNull();
         }
     }
 
@@ -463,10 +486,10 @@ class NotificationServiceTest {
             given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
             given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
 
-            Notification result = notificationService.recordFailure(notifId, "Connection timeout");
+            NotificationResponse result = notificationService.recordFailure(notifId, "Connection timeout");
 
-            assertThat(result.getStatus()).isEqualTo(NotificationStatus.FAILED);
-            assertThat(result.getFailureReason()).isEqualTo("Connection timeout");
+            assertThat(result.status()).isEqualTo(NotificationStatus.FAILED);
+            assertThat(result.failureReason()).isEqualTo("Connection timeout");
         }
     }
 
@@ -486,9 +509,9 @@ class NotificationServiceTest {
             given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
             given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
 
-            Notification result = notificationService.markAsCancelled(notifId);
+            NotificationResponse result = notificationService.markAsCancelled(notifId);
 
-            assertThat(result.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(result.status()).isEqualTo(NotificationStatus.CANCELLED);
         }
     }
 
@@ -508,9 +531,9 @@ class NotificationServiceTest {
             given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
             given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
 
-            Notification result = notificationService.updateNotificationStatus(notifId, NotificationStatus.CANCELLED);
+            NotificationResponse result = notificationService.updateNotificationStatus(notifId, NotificationStatus.CANCELLED);
 
-            assertThat(result.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(result.status()).isEqualTo(NotificationStatus.CANCELLED);
         }
     }
 

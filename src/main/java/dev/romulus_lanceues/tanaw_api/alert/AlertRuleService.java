@@ -21,7 +21,7 @@ public class AlertRuleService {
     private final LocationRepository locationRepository;
 
     @Transactional
-    public AlertRule createAlertRule(AlertRuleRequest request) {
+    public AlertRuleResponse createAlertRule(AlertRuleRequest request) {
         log.info("Creating alert rule for location {} with disaster type {}",
                 request.locationId(), request.disasterType());
 
@@ -38,32 +38,39 @@ public class AlertRuleService {
                 .minimumSeverity(request.minimumSeverity())
                 .build();
 
-        return alertRuleRepository.save(alertRule);
+        return AlertRuleResponse.from(alertRuleRepository.save(alertRule));
     }
 
-    public AlertRule getAlertRule(UUID alertRuleId, UUID userId) {
+    public AlertRuleResponse getAlertRule(UUID alertRuleId, UUID userId) {
         log.info("Fetching alert rule {} for user {}", alertRuleId, userId);
 
         return alertRuleRepository.findByIdAndLocationUserId(alertRuleId, userId)
+                .map(AlertRuleResponse::from)
                 .orElseThrow(() -> new AlertRuleNotFoundException(
                         "Alert rule not found: " + alertRuleId));
     }
 
-    public List<AlertRule> getAlertRulesByUser(UUID userId) {
+    public List<AlertRuleResponse> getAlertRulesByUser(UUID userId) {
         log.info("Fetching alert rules for user {}", userId);
 
-        return alertRuleRepository.findByLocationUserId(userId);
+        return alertRuleRepository.findByLocationUserId(userId)
+                .stream()
+                .map(AlertRuleResponse::from)
+                .toList();
     }
 
-    public List<AlertRule> getAlertRulesByLocation(UUID locationId) {
+    public List<AlertRuleResponse> getAlertRulesByLocation(UUID locationId) {
         log.info("Fetching alert rules for location {}", locationId);
 
-        return alertRuleRepository.findByLocationId(locationId);
+        return alertRuleRepository.findByLocationId(locationId)
+                .stream()
+                .map(AlertRuleResponse::from)
+                .toList();
     }
 
     @Transactional
-    public AlertRule updateThresholds(UUID alertRuleId, UUID userId,
-                                      Double minimumMagnitude, Double radiusKm, String minimumSeverity) {
+    public AlertRuleResponse updateThresholds(UUID alertRuleId, UUID userId,
+                                              Double minimumMagnitude, Double radiusKm, String minimumSeverity) {
         log.info("Updating thresholds for alert rule {}", alertRuleId);
 
         AlertRule alertRule = alertRuleRepository.findByIdAndLocationUserId(alertRuleId, userId)
@@ -72,11 +79,11 @@ public class AlertRuleService {
 
         alertRule.updateThresholds(minimumMagnitude, radiusKm, minimumSeverity);
 
-        return alertRuleRepository.save(alertRule);
+        return AlertRuleResponse.from(alertRuleRepository.save(alertRule));
     }
 
     @Transactional
-    public AlertRule enableAlertRule(UUID alertRuleId, UUID userId) {
+    public AlertRuleResponse enableAlertRule(UUID alertRuleId, UUID userId) {
         log.info("Enabling alert rule {}", alertRuleId);
 
         AlertRule alertRule = alertRuleRepository.findByIdAndLocationUserId(alertRuleId, userId)
@@ -85,11 +92,11 @@ public class AlertRuleService {
 
         alertRule.enable();
 
-        return alertRuleRepository.save(alertRule);
+        return AlertRuleResponse.from(alertRuleRepository.save(alertRule));
     }
 
     @Transactional
-    public AlertRule disableAlertRule(UUID alertRuleId, UUID userId) {
+    public AlertRuleResponse disableAlertRule(UUID alertRuleId, UUID userId) {
         log.info("Disabling alert rule {}", alertRuleId);
 
         AlertRule alertRule = alertRuleRepository.findByIdAndLocationUserId(alertRuleId, userId)
@@ -98,7 +105,7 @@ public class AlertRuleService {
 
         alertRule.disable();
 
-        return alertRuleRepository.save(alertRule);
+        return AlertRuleResponse.from(alertRuleRepository.save(alertRule));
     }
 
     @Transactional
@@ -112,3 +119,4 @@ public class AlertRuleService {
         alertRuleRepository.delete(alertRule);
     }
 }
+

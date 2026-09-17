@@ -21,7 +21,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
 
     @Transactional
-    public Notification createNotification(Alert alert, NotificationChannel channel, String destination) {
+    public NotificationResponse createNotification(Alert alert, NotificationChannel channel, String destination) {
         log.info("Creating notification for alert {} and channel {}", alert.getId(), channel);
 
         if (notificationRepository.existsByAlertIdAndChannel(alert.getId(), channel)) {
@@ -39,24 +39,24 @@ public class NotificationService {
                 .attemptCount(0)
                 .build();
 
-        return notificationRepository.save(notification);
+        return NotificationResponse.from(notificationRepository.save(notification));
     }
 
-    public Notification getNotification(UUID id) {
+    public NotificationResponse getNotification(UUID id) {
         log.info("Fetching notification with ID {}", id);
 
-        return notificationRepository.findById(id)
-                .orElseThrow(() -> new NotificationNotFoundException("Notification not found: " + id));
+        return NotificationResponse.from(findNotification(id));
     }
 
-    public Notification getNotificationWithDetails(UUID id) {
+    public NotificationResponse getNotificationWithDetails(UUID id) {
         log.info("Fetching notification with details for ID {}", id);
 
         return notificationRepository.findByIdWithDetails(id)
+                .map(NotificationResponse::from)
                 .orElseThrow(() -> new NotificationNotFoundException("Notification not found: " + id));
     }
 
-    public Notification getNotificationForUser(UUID id, UUID userId) {
+    public NotificationResponse getNotificationForUser(UUID id, UUID userId) {
         log.info("Fetching notification {} for user {}", id, userId);
 
         Notification notification = notificationRepository.findByIdWithDetails(id)
@@ -67,98 +67,112 @@ public class NotificationService {
             throw new NotificationNotFoundException("Notification not found: " + id);
         }
 
-        return notification;
+        return NotificationResponse.from(notification);
     }
 
-    public Page<Notification> getNotificationsByUser(UUID userId, Pageable pageable) {
+    public Page<NotificationResponse> getNotificationsByUser(UUID userId, Pageable pageable) {
         log.info("Fetching paged notifications for user {}, page: {}, size: {}",
                 userId, pageable.getPageNumber(), pageable.getPageSize());
 
-        return notificationRepository.findByAlertAlertRuleLocationUserId(userId, pageable);
+        return notificationRepository.findByAlertAlertRuleLocationUserId(userId, pageable)
+                .map(NotificationResponse::from);
     }
 
-    public Page<Notification> getNotificationsByUserAndStatus(UUID userId, NotificationStatus status, Pageable pageable) {
+    public Page<NotificationResponse> getNotificationsByUserAndStatus(UUID userId, NotificationStatus status, Pageable pageable) {
         log.info("Fetching paged notifications for user {} with status {}, page: {}, size: {}",
                 userId, status, pageable.getPageNumber(), pageable.getPageSize());
 
-        return notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(userId, status, pageable);
+        return notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(userId, status, pageable)
+                .map(NotificationResponse::from);
     }
 
-    public List<Notification> getNotificationsByAlert(UUID alertId) {
+    public List<NotificationResponse> getNotificationsByAlert(UUID alertId) {
         log.info("Fetching notifications for alert {}", alertId);
 
-        return notificationRepository.findByAlertId(alertId);
+        return notificationRepository.findByAlertId(alertId)
+                .stream()
+                .map(NotificationResponse::from)
+                .toList();
     }
 
-    public Page<Notification> getNotificationsByStatus(NotificationStatus status, Pageable pageable) {
+    public Page<NotificationResponse> getNotificationsByStatus(NotificationStatus status, Pageable pageable) {
         log.info("Fetching paged notifications with status {}, page: {}, size: {}",
                 status, pageable.getPageNumber(), pageable.getPageSize());
 
-        return notificationRepository.findByStatus(status, pageable);
+        return notificationRepository.findByStatus(status, pageable)
+                .map(NotificationResponse::from);
     }
 
-    public List<Notification> getPendingNotificationsForDispatch(int maxAttempts) {
+    public List<NotificationResponse> getPendingNotificationsForDispatch(int maxAttempts) {
         log.info("Fetching pending notifications for dispatch with max attempts {}", maxAttempts);
 
-        return notificationRepository.findPendingForDispatch(NotificationStatus.PENDING, maxAttempts);
+        return notificationRepository.findPendingForDispatch(NotificationStatus.PENDING, maxAttempts)
+                .stream()
+                .map(NotificationResponse::from)
+                .toList();
     }
 
     @Transactional
-    public Notification markAsProcessing(UUID id) {
+    public NotificationResponse markAsProcessing(UUID id) {
         log.info("Marking notification {} as PROCESSING", id);
 
-        Notification notification = getNotification(id);
+        Notification notification = findNotification(id);
         notification.incrementAttempt();
         notification.updateStatus(NotificationStatus.PROCESSING);
 
-        return notificationRepository.save(notification);
+        return NotificationResponse.from(notificationRepository.save(notification));
     }
 
     @Transactional
-    public Notification recordSuccess(UUID id) {
+    public NotificationResponse recordSuccess(UUID id) {
         log.info("Recording delivery success for notification {}", id);
 
-        Notification notification = getNotification(id);
+        Notification notification = findNotification(id);
         notification.recordSuccess(Instant.now(), NotificationStatus.SENT);
 
-        return notificationRepository.save(notification);
+        return NotificationResponse.from(notificationRepository.save(notification));
     }
 
     @Transactional
-    public Notification recordFailure(UUID id, String failureReason) {
+    public NotificationResponse recordFailure(UUID id, String failureReason) {
         log.info("Recording delivery failure for notification {}: {}", id, failureReason);
 
-        Notification notification = getNotification(id);
+        Notification notification = findNotification(id);
         notification.recordFailure(NotificationStatus.FAILED, failureReason);
 
-        return notificationRepository.save(notification);
+        return NotificationResponse.from(notificationRepository.save(notification));
     }
 
     @Transactional
-    public Notification markAsCancelled(UUID id) {
+    public NotificationResponse markAsCancelled(UUID id) {
         log.info("Marking notification {} as CANCELLED", id);
 
-        Notification notification = getNotification(id);
+        Notification notification = findNotification(id);
         notification.updateStatus(NotificationStatus.CANCELLED);
 
-        return notificationRepository.save(notification);
+        return NotificationResponse.from(notificationRepository.save(notification));
     }
 
     @Transactional
-    public Notification updateNotificationStatus(UUID id, NotificationStatus status) {
+    public NotificationResponse updateNotificationStatus(UUID id, NotificationStatus status) {
         log.info("Updating status of notification {} to {}", id, status);
 
-        Notification notification = getNotification(id);
+        Notification notification = findNotification(id);
         notification.updateStatus(status);
 
-        return notificationRepository.save(notification);
+        return NotificationResponse.from(notificationRepository.save(notification));
     }
 
     @Transactional
     public void deleteNotification(UUID id) {
         log.info("Deleting notification {}", id);
 
-        Notification notification = getNotification(id);
+        Notification notification = findNotification(id);
         notificationRepository.delete(notification);
+    }
+
+    private Notification findNotification(UUID id) {
+        return notificationRepository.findById(id)
+                .orElseThrow(() -> new NotificationNotFoundException("Notification not found: " + id));
     }
 }

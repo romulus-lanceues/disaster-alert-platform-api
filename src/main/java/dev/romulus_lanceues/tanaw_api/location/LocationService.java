@@ -26,7 +26,7 @@ public class LocationService {
     private final GeoPointFactory geoPointFactory;
 
     @Transactional
-    public Location createLocation(LocationRequest request) {
+    public LocationResponse createLocation(LocationRequest request) {
         log.info("Creating location '{}' for user {}", request.name(), request.userId());
 
         User user = userRepository.findById(request.userId())
@@ -46,24 +46,29 @@ public class LocationService {
                 geoPointFactory
         );
 
-        return locationRepository.save(location);
+        Location savedLocation = locationRepository.save(location);
+        return LocationResponse.from(savedLocation);
     }
 
-    public List<Location> getLocationsByUser(UUID userId) {
+    public List<LocationResponse> getLocationsByUser(UUID userId) {
         log.info("Fetching locations for user {}", userId);
 
         if (!userRepository.existsById(userId)) {
             throw new UserNotFoundException("User not found: " + userId);
         }
 
-        return locationRepository.findByUserId(userId);
+        return locationRepository.findByUserId(userId)
+                .stream()
+                .map(LocationResponse::from)
+                .toList();
     }
 
     @Transactional(readOnly = true)
-    public Location getLocation(UUID locationId, UUID userId) {
+    public LocationResponse getLocation(UUID locationId, UUID userId) {
         log.info("Fetching location {} for user {}", locationId, userId);
 
         return locationRepository.findByIdAndUserId(locationId, userId)
+                .map(LocationResponse::from)
                 .orElseThrow(() -> new LocationNotFoundException(
                         "Location not found: " + locationId));
     }

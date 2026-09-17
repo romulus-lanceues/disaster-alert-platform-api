@@ -38,15 +38,16 @@ class UserServiceTest {
     class CreateUser {
 
         @Test
-        @DisplayName("should create and return user when email is not taken")
+        @DisplayName("should create and return user response when email is not taken")
         void shouldCreateAndReturnUser_whenEmailIsNotTaken() {
 
             String email = "alice@example.com";
             String rawPassword = "SecurePass123!";
             String encodedPassword = "encoded_hash_abc";
+            UUID userId = UUID.randomUUID();
 
             User savedUser = User.builder()
-                    .id(UUID.randomUUID())
+                    .id(userId)
                     .email(email)
                     .passwordHash(encodedPassword)
                     .status(UserStatus.ACTIVE)
@@ -57,12 +58,12 @@ class UserServiceTest {
             given(userRepository.save(any(User.class))).willReturn(savedUser);
 
 
-            User result = userService.createUser(email, rawPassword);
+            UserResponse result = userService.createUser(email, rawPassword);
 
             assertThat(result).isNotNull();
-            assertThat(result.getEmail()).isEqualTo(email);
-            assertThat(result.getPasswordHash()).isEqualTo(encodedPassword);
-            assertThat(result.getStatus()).isEqualTo(UserStatus.ACTIVE);
+            assertThat(result.id()).isEqualTo(userId);
+            assertThat(result.email()).isEqualTo(email);
+            assertThat(result.status()).isEqualTo(UserStatus.ACTIVE);
         }
 
         @Test
@@ -87,7 +88,7 @@ class UserServiceTest {
     class FindById {
 
         @Test
-        @DisplayName("should return user when user exists")
+        @DisplayName("should return user response when user exists")
         void shouldReturnUser_whenUserExists() {
 
             UUID userId = UUID.randomUUID();
@@ -100,13 +101,14 @@ class UserServiceTest {
 
             given(userRepository.findById(userId)).willReturn(Optional.of(user));
 
-            Optional<User> result = userService.findById(userId);
+            Optional<UserResponse> result = userService.findById(userId);
 
             assertThat(result)
                     .isPresent()
                     .hasValueSatisfying(found -> {
-                        assertThat(found.getId()).isEqualTo(userId);
-                        assertThat(found.getEmail()).isEqualTo("alice@example.com");
+                        assertThat(found.id()).isEqualTo(userId);
+                        assertThat(found.email()).isEqualTo("alice@example.com");
+                        assertThat(found.status()).isEqualTo(UserStatus.ACTIVE);
                     });
         }
 
@@ -118,7 +120,7 @@ class UserServiceTest {
 
             given(userRepository.findById(userId)).willReturn(Optional.empty());
 
-            Optional<User> result = userService.findById(userId);
+            Optional<UserResponse> result = userService.findById(userId);
 
             assertThat(result).isEmpty();
         }
@@ -129,12 +131,13 @@ class UserServiceTest {
     class FindActiveByEmail {
 
         @Test
-        @DisplayName("should return user when active user with email exists")
+        @DisplayName("should return user response when active user with email exists")
         void shouldReturnUser_whenActiveUserWithEmailExists() {
 
             String email = "alice@example.com";
+            UUID userId = UUID.randomUUID();
             User user = User.builder()
-                    .id(UUID.randomUUID())
+                    .id(userId)
                     .email(email)
                     .passwordHash("hash_123")
                     .status(UserStatus.ACTIVE)
@@ -143,13 +146,14 @@ class UserServiceTest {
             given(userRepository.findByEmailAndStatus(email, UserStatus.ACTIVE))
                     .willReturn(Optional.of(user));
 
-            Optional<User> result = userService.findActiveByEmail(email);
+            Optional<UserResponse> result = userService.findActiveByEmail(email);
 
             assertThat(result)
                     .isPresent()
                     .hasValueSatisfying(found -> {
-                        assertThat(found.getEmail()).isEqualTo(email);
-                        assertThat(found.getStatus()).isEqualTo(UserStatus.ACTIVE);
+                        assertThat(found.id()).isEqualTo(userId);
+                        assertThat(found.email()).isEqualTo(email);
+                        assertThat(found.status()).isEqualTo(UserStatus.ACTIVE);
                     });
         }
 
@@ -163,7 +167,7 @@ class UserServiceTest {
                     .willReturn(Optional.empty());
 
 
-            Optional<User> result = userService.findActiveByEmail(email);
+            Optional<UserResponse> result = userService.findActiveByEmail(email);
 
             assertThat(result).isEmpty();
         }
