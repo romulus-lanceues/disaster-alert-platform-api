@@ -287,79 +287,6 @@ public class NotificationRepositoryTest {
     }
 
     @Nested
-    @DisplayName("findByAlertIdAndChannel")
-    class FindByAlertIdAndChannel {
-
-        @Test
-        @DisplayName("should find notification when alert id and channel match the notification")
-        void shouldFindNotificationWhenAlertIdAndChannelMatchTheNotification(){
-            Notification notification = Notification.builder()
-                    .alert(primaryAlert)
-                    .channel(NotificationChannel.DISCORD)
-                    .destination("Email")
-                    .status(NotificationStatus.PENDING)
-                    .attemptCount(1)
-                    .build();
-
-            Notification persisted = notificationRepository.saveAndFlush(notification);
-
-            entityManager.clear();
-
-            Optional<Notification> found = notificationRepository.findByAlertIdAndChannel(primaryAlert.getId(), NotificationChannel.DISCORD);
-
-            assertThat(found).isPresent().hasValueSatisfying( persistedNotif ->{
-                assertThat(persistedNotif.getId()).isEqualTo(persisted.getId());
-                assertThat(persistedNotif.getAlert().getId()).isEqualTo(primaryAlert.getId());
-            });
-        }
-
-        @Test
-        @DisplayName("should return empty when alert id and channel did not match a notification")
-        void shouldReturnEmptyWhenAlertIdAndChannelDidNotMatchANotification(){
-
-            Location secondLocation = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
-            AlertRule secondRule = persistAlertRule(secondLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert secondAlert = persistAlert(primaryDisasterEvent, secondRule, AlertStatus.PENDING);
-
-            Notification notification = Notification.builder()
-                    .alert(secondAlert)
-                    .channel(NotificationChannel.DISCORD)
-                    .destination("Discord Server")
-                    .status(NotificationStatus.PENDING)
-                    .attemptCount(1)
-                    .build();
-
-            Notification persisted = notificationRepository.saveAndFlush(notification);
-
-            entityManager.clear();
-
-            Optional<Notification> found = notificationRepository.findByAlertIdAndChannel(primaryAlert.getId(), NotificationChannel.DISCORD);
-
-            assertThat(found).isEmpty();
-
-        }
-
-        @Test
-        @DisplayName("should return empty when channel does not match notification")
-        void shouldReturnEmptyWhenChannelMismatches() {
-            Notification notification = Notification.builder()
-                    .alert(primaryAlert)
-                    .channel(NotificationChannel.EMAIL)
-                    .destination("Email")
-                    .status(NotificationStatus.PENDING)
-                    .attemptCount(1)
-                    .build();
-
-            notificationRepository.saveAndFlush(notification);
-            entityManager.clear();
-
-            Optional<Notification> found = notificationRepository.findByAlertIdAndChannel(primaryAlert.getId(), NotificationChannel.TELEGRAM);
-
-            assertThat(found).isEmpty();
-        }
-    }
-
-    @Nested
     @DisplayName("existsByAlertIdAndChannel")
     class ExistsByAlertIdAndChannel {
 
@@ -393,78 +320,125 @@ public class NotificationRepositoryTest {
     }
 
     @Nested
-    @DisplayName("findByAlertId")
-    class FindByAlertId {
+    @DisplayName("findByIdAndUserId")
+    class FindByIdAndUserId {
 
         @Test
-        @DisplayName("should return all notifications associated with specified alert ID")
-        void shouldReturnAllNotificationsAssociatedWithSpecifiedAlertId() {
-            Location secondLocation = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
-            AlertRule secondRule = persistAlertRule(secondLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert otherAlert = persistAlert(primaryDisasterEvent, secondRule, AlertStatus.PENDING);
+        @DisplayName("should return projected NotificationResponse with full event and location details when owned by user")
+        void shouldReturnProjectedNotificationResponseWithDetails_whenNotificationBelongsToUser() {
+            Notification notification = persistNotification(primaryAlert, NotificationChannel.EMAIL, "user1@example.com", NotificationStatus.PENDING, 0);
 
-            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-            Notification notif2 = persistNotification(primaryAlert, NotificationChannel.TELEGRAM, NotificationStatus.SENT);
-            persistNotification(otherAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
+            entityManager.flush();
+            entityManager.clear();
 
-            List<Notification> notifications = notificationRepository.findByAlertId(primaryAlert.getId());
+            Optional<NotificationResponse> result = notificationRepository.findByIdAndUserId(notification.getId(), primaryUser.getId());
 
-            assertThat(notifications)
-                    .hasSize(2)
-                    .extracting(Notification::getId)
-                    .containsExactlyInAnyOrder(notif1.getId(), notif2.getId());
+            assertThat(result).isPresent();
+            NotificationResponse response = result.get();
+
+            assertThat(response.id()).isEqualTo(notification.getId());
+            assertThat(response.alertId()).isEqualTo(primaryAlert.getId());
+            assertThat(response.channel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(response.destination()).isEqualTo("user1@example.com");
+            assertThat(response.status()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(response.attemptCount()).isZero();
+            assertThat(response.alertStatus()).isEqualTo(AlertStatus.PENDING);
+
+            // Location details
+            assertThat(response.locationId()).isEqualTo(primaryLocation.getId());
+            assertThat(response.locationName()).isEqualTo("Home");
+
+            // Disaster event details
+            assertThat(response.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
+            assertThat(response.disasterEventId()).isEqualTo(primaryDisasterEvent.getId());
+            assertThat(response.magnitude()).isEqualTo(6.2);
+            assertThat(response.severity()).isEqualTo("HIGH");
+            assertThat(response.depthKm()).isEqualTo(10.0);
+            assertThat(response.latitude()).isEqualTo(14.6000);
+            assertThat(response.longitude()).isEqualTo(120.9850);
         }
 
         @Test
-        @DisplayName("should return empty list when no notifications exist for alert ID")
-        void shouldReturnEmptyListWhenNoNotificationsExistForAlertId() {
-            List<Notification> notifications = notificationRepository.findByAlertId(UUID.randomUUID());
+        @DisplayName("should return empty optional when notification belongs to another user")
+        void shouldReturnEmpty_whenNotificationBelongsToAnotherUser() {
+            User otherUser = persistUser("other@example.com");
+            Notification notification = persistNotification(primaryAlert, NotificationChannel.EMAIL, "user1@example.com", NotificationStatus.PENDING, 0);
 
-            assertThat(notifications).isEmpty();
-        }
-    }
+            entityManager.flush();
+            entityManager.clear();
 
-    @Nested
-    @DisplayName("findByStatus")
-    class FindByStatus {
+            Optional<NotificationResponse> result = notificationRepository.findByIdAndUserId(notification.getId(), otherUser.getId());
 
-        @Test
-        @DisplayName("should return all notifications with specified status")
-        void shouldReturnAllNotificationsWithSpecifiedStatus() {
-            Location secondLocation = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
-            AlertRule secondRule = persistAlertRule(secondLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert secondAlert = persistAlert(primaryDisasterEvent, secondRule, AlertStatus.PENDING);
-
-            Notification pending1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-            Notification pending2 = persistNotification(secondAlert, NotificationChannel.DISCORD, NotificationStatus.PENDING);
-            persistNotification(primaryAlert, NotificationChannel.TELEGRAM, NotificationStatus.SENT);
-
-            List<Notification> result = notificationRepository.findByStatus(NotificationStatus.PENDING);
-
-            assertThat(result)
-                    .hasSize(2)
-                    .extracting(Notification::getId)
-                    .containsExactlyInAnyOrder(pending1.getId(), pending2.getId());
+            assertThat(result).isEmpty();
         }
 
         @Test
-        @DisplayName("should return empty list when no notifications match status")
-        void shouldReturnEmptyListWhenNoNotificationsMatchStatus() {
-            persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-
-            List<Notification> result = notificationRepository.findByStatus(NotificationStatus.FAILED);
+        @DisplayName("should return empty optional when notification ID does not exist")
+        void shouldReturnEmpty_whenNotificationDoesNotExist() {
+            Optional<NotificationResponse> result = notificationRepository.findByIdAndUserId(UUID.randomUUID(), primaryUser.getId());
 
             assertThat(result).isEmpty();
         }
     }
 
     @Nested
-    @DisplayName("findByStatus with Pageable")
-    class FindByStatusWithPageable {
+    @DisplayName("findByUserId")
+    class FindByUserId {
 
         @Test
-        @DisplayName("should return paginated notifications matching specified status")
-        void shouldReturnPaginatedNotificationsMatchingStatus() {
+        @DisplayName("should return paginated notifications filtered by status for specified user")
+        void shouldReturnPagedNotifications_whenFilteredByStatus() {
+            User otherUser = persistUser("other@example.com");
+            Location otherLocation = persistLocation(otherUser, "Other Office", 14.5500, 121.0300);
+            AlertRule otherRule = persistAlertRule(otherLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
+            Alert otherAlert = persistAlert(primaryDisasterEvent, otherRule, AlertStatus.PENDING);
+
+            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, "email", NotificationStatus.PENDING, 0);
+            persistNotification(primaryAlert, NotificationChannel.DISCORD, "discord", NotificationStatus.SENT, 0);
+            // Notification belonging to other user should be excluded
+            persistNotification(otherAlert, NotificationChannel.EMAIL, "other-email", NotificationStatus.PENDING, 0);
+
+            entityManager.flush();
+            entityManager.clear();
+
+            Page<NotificationResponse> page = notificationRepository.findByUserId(
+                    primaryUser.getId(),
+                    NotificationStatus.PENDING,
+                    PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "createdAt"))
+            );
+
+            assertThat(page.getTotalElements()).isEqualTo(1);
+            assertThat(page.getContent()).hasSize(1);
+            NotificationResponse item = page.getContent().get(0);
+            assertThat(item.id()).isEqualTo(notif1.getId());
+            assertThat(item.status()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(item.locationName()).isEqualTo("Home");
+        }
+
+        @Test
+        @DisplayName("should return all notifications across all statuses when status parameter is null")
+        void shouldReturnAllNotificationsForUser_whenStatusIsNull() {
+            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, "email", NotificationStatus.PENDING, 0);
+            Notification notif2 = persistNotification(primaryAlert, NotificationChannel.DISCORD, "discord", NotificationStatus.SENT, 0);
+
+            entityManager.flush();
+            entityManager.clear();
+
+            Page<NotificationResponse> page = notificationRepository.findByUserId(
+                    primaryUser.getId(),
+                    null,
+                    PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "createdAt"))
+            );
+
+            assertThat(page.getTotalElements()).isEqualTo(2);
+            assertThat(page.getContent())
+                    .extracting(NotificationResponse::id)
+                    .containsExactly(notif1.getId(), notif2.getId());
+        }
+
+        @Test
+        @DisplayName("should handle pagination correctly across multiple pages")
+        void shouldHandlePaginationCorrectly() {
             Location loc2 = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
             AlertRule rule2 = persistAlertRule(loc2, DisasterType.EARTHQUAKE, 5.0, 50.0);
             Alert alert2 = persistAlert(primaryDisasterEvent, rule2, AlertStatus.PENDING);
@@ -473,12 +447,15 @@ public class NotificationRepositoryTest {
             AlertRule rule3 = persistAlertRule(loc3, DisasterType.EARTHQUAKE, 5.0, 50.0);
             Alert alert3 = persistAlert(primaryDisasterEvent, rule3, AlertStatus.PENDING);
 
-            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-            Notification notif2 = persistNotification(alert2, NotificationChannel.TELEGRAM, NotificationStatus.PENDING);
-            Notification notif3 = persistNotification(alert3, NotificationChannel.DISCORD, NotificationStatus.PENDING);
-            persistNotification(primaryAlert, NotificationChannel.DISCORD, NotificationStatus.SENT);
+            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, "dest1", NotificationStatus.PENDING, 0);
+            Notification notif2 = persistNotification(alert2, NotificationChannel.TELEGRAM, "dest2", NotificationStatus.PENDING, 0);
+            Notification notif3 = persistNotification(alert3, NotificationChannel.DISCORD, "dest3", NotificationStatus.PENDING, 0);
 
-            Page<Notification> page0 = notificationRepository.findByStatus(
+            entityManager.flush();
+            entityManager.clear();
+
+            Page<NotificationResponse> page0 = notificationRepository.findByUserId(
+                    primaryUser.getId(),
                     NotificationStatus.PENDING,
                     PageRequest.of(0, 2, Sort.by(Sort.Direction.ASC, "createdAt"))
             );
@@ -487,76 +464,18 @@ public class NotificationRepositoryTest {
             assertThat(page0.getTotalPages()).isEqualTo(2);
             assertThat(page0.getContent()).hasSize(2);
             assertThat(page0.getContent())
-                    .extracting(Notification::getId)
+                    .extracting(NotificationResponse::id)
                     .containsExactly(notif1.getId(), notif2.getId());
 
-            Page<Notification> page1 = notificationRepository.findByStatus(
+            Page<NotificationResponse> page1 = notificationRepository.findByUserId(
+                    primaryUser.getId(),
                     NotificationStatus.PENDING,
                     PageRequest.of(1, 2, Sort.by(Sort.Direction.ASC, "createdAt"))
             );
 
             assertThat(page1.getContent()).hasSize(1);
             assertThat(page1.getContent())
-                    .extracting(Notification::getId)
-                    .containsExactly(notif3.getId());
-        }
-
-        @Test
-        @DisplayName("should return empty page when no notifications match status")
-        void shouldReturnEmptyPageWhenNoNotificationsMatchStatus() {
-            persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-
-            Page<Notification> page = notificationRepository.findByStatus(
-                    NotificationStatus.CANCELLED,
-                    PageRequest.of(0, 10)
-            );
-
-            assertThat(page.getTotalElements()).isZero();
-            assertThat(page.getContent()).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("findByAlertAlertRuleLocationUserId")
-    class FindByAlertAlertRuleLocationUserId {
-
-        @Test
-        @DisplayName("should return paginated notifications belonging to specified user and exclude others")
-        void shouldFindPagedNotificationsForUser() {
-            User otherUser = persistUser("other@example.com");
-            Location otherLocation = persistLocation(otherUser, "Other Office", 14.5500, 121.0300);
-            AlertRule otherRule = persistAlertRule(otherLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert otherAlert = persistAlert(primaryDisasterEvent, otherRule, AlertStatus.PENDING);
-
-            Location loc2 = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
-            AlertRule rule2 = persistAlertRule(loc2, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert alert2 = persistAlert(primaryDisasterEvent, rule2, AlertStatus.PENDING);
-
-            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-            Notification notif2 = persistNotification(primaryAlert, NotificationChannel.DISCORD, NotificationStatus.SENT);
-            Notification notif3 = persistNotification(alert2, NotificationChannel.TELEGRAM, NotificationStatus.PENDING);
-            persistNotification(otherAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-
-            Page<Notification> page0 = notificationRepository.findByAlertAlertRuleLocationUserId(
-                    primaryUser.getId(),
-                    PageRequest.of(0, 2, Sort.by(Sort.Direction.ASC, "createdAt"))
-            );
-
-            assertThat(page0.getTotalElements()).isEqualTo(3);
-            assertThat(page0.getTotalPages()).isEqualTo(2);
-            assertThat(page0.getContent()).hasSize(2);
-            assertThat(page0.getContent())
-                    .extracting(Notification::getId)
-                    .containsExactly(notif1.getId(), notif2.getId());
-
-            Page<Notification> page1 = notificationRepository.findByAlertAlertRuleLocationUserId(
-                    primaryUser.getId(),
-                    PageRequest.of(1, 2, Sort.by(Sort.Direction.ASC, "createdAt"))
-            );
-
-            assertThat(page1.getContent()).hasSize(1);
-            assertThat(page1.getContent())
-                    .extracting(Notification::getId)
+                    .extracting(NotificationResponse::id)
                     .containsExactly(notif3.getId());
         }
 
@@ -565,199 +484,17 @@ public class NotificationRepositoryTest {
         void shouldReturnEmptyPageWhenUserHasNoNotifications() {
             User emptyUser = persistUser("empty@example.com");
 
-            Page<Notification> page = notificationRepository.findByAlertAlertRuleLocationUserId(
+            entityManager.flush();
+            entityManager.clear();
+
+            Page<NotificationResponse> page = notificationRepository.findByUserId(
                     emptyUser.getId(),
+                    null,
                     PageRequest.of(0, 10)
             );
 
             assertThat(page.getTotalElements()).isZero();
             assertThat(page.getContent()).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("findByAlertAlertRuleLocationUserIdAndStatus")
-    class FindByAlertAlertRuleLocationUserIdAndStatus {
-
-        @Test
-        @DisplayName("should return paginated notifications matching both user ID and status")
-        void shouldFindPagedNotificationsForUserFilteredByStatus() {
-            User otherUser = persistUser("other@example.com");
-            Location otherLocation = persistLocation(otherUser, "Other Office", 14.5500, 121.0300);
-            AlertRule otherRule = persistAlertRule(otherLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert otherAlert = persistAlert(primaryDisasterEvent, otherRule, AlertStatus.PENDING);
-
-            Location loc2 = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
-            AlertRule rule2 = persistAlertRule(loc2, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert alert2 = persistAlert(primaryDisasterEvent, rule2, AlertStatus.PENDING);
-
-            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-            Notification notif2 = persistNotification(primaryAlert, NotificationChannel.DISCORD, NotificationStatus.SENT);
-            Notification notif3 = persistNotification(alert2, NotificationChannel.TELEGRAM, NotificationStatus.PENDING);
-            persistNotification(otherAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-
-            Page<Notification> pendingPage = notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(
-                    primaryUser.getId(),
-                    NotificationStatus.PENDING,
-                    PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "createdAt"))
-            );
-
-            assertThat(pendingPage.getTotalElements()).isEqualTo(2);
-            assertThat(pendingPage.getContent())
-                    .extracting(Notification::getId)
-                    .containsExactly(notif1.getId(), notif3.getId());
-
-            Page<Notification> sentPage = notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(
-                    primaryUser.getId(),
-                    NotificationStatus.SENT,
-                    PageRequest.of(0, 10)
-            );
-
-            assertThat(sentPage.getTotalElements()).isEqualTo(1);
-            assertThat(sentPage.getContent())
-                    .extracting(Notification::getId)
-                    .containsExactly(notif2.getId());
-        }
-
-        @Test
-        @DisplayName("should return empty page when user has no notifications with specified status")
-        void shouldReturnEmptyPageWhenNoNotificationsMatchStatusForUser() {
-            persistNotification(primaryAlert, NotificationChannel.EMAIL, NotificationStatus.PENDING);
-
-            Page<Notification> page = notificationRepository.findByAlertAlertRuleLocationUserIdAndStatus(
-                    primaryUser.getId(),
-                    NotificationStatus.CANCELLED,
-                    PageRequest.of(0, 10)
-            );
-
-            assertThat(page.getTotalElements()).isZero();
-            assertThat(page.getContent()).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("findPendingForDispatch")
-    class FindPendingForDispatch {
-
-        @Test
-        @DisplayName("should return pending notifications with attempts below max and eager fetch details ordered by createdAt")
-        void shouldReturnPendingNotificationsWithAttemptsBelowMaxOrderedByCreatedAt() {
-            Location loc2 = persistLocation(primaryUser, "Office", 14.5547, 121.0244);
-            AlertRule rule2 = persistAlertRule(loc2, DisasterType.EARTHQUAKE, 5.0, 50.0);
-            Alert alert2 = persistAlert(primaryDisasterEvent, rule2, AlertStatus.PENDING);
-
-            // Valid: PENDING, attemptCount = 0 (< 3)
-            Notification notif1 = persistNotification(primaryAlert, NotificationChannel.EMAIL, "dest1", NotificationStatus.PENDING, 0);
-
-            // Valid: PENDING, attemptCount = 2 (< 3)
-            Notification notif2 = persistNotification(primaryAlert, NotificationChannel.DISCORD, "dest2", NotificationStatus.PENDING, 2);
-
-            // Excluded: PENDING, attemptCount = 3 (not < 3)
-            persistNotification(primaryAlert, NotificationChannel.TELEGRAM, "dest3", NotificationStatus.PENDING, 3);
-
-            // Excluded: status is SENT (not PENDING)
-            persistNotification(alert2, NotificationChannel.EMAIL, "dest4", NotificationStatus.SENT, 0);
-
-            entityManager.flush();
-            entityManager.clear();
-
-            List<Notification> result = notificationRepository.findPendingForDispatch(NotificationStatus.PENDING, 3);
-
-            assertThat(result)
-                    .hasSize(2)
-                    .extracting(Notification::getId)
-                    .containsExactly(notif1.getId(), notif2.getId());
-
-            // Verify eager fetches work without lazy initialization exception after clear
-            Notification fetched1 = result.get(0);
-            assertThat(fetched1.getAlert()).isNotNull();
-            assertThat(fetched1.getAlert().getId()).isEqualTo(primaryAlert.getId());
-
-            assertThat(fetched1.getAlert().getDisasterEvent()).isNotNull();
-            assertThat(fetched1.getAlert().getDisasterEvent().getId()).isEqualTo(primaryDisasterEvent.getId());
-            assertThat(fetched1.getAlert().getDisasterEvent().getSource()).isEqualTo("USGS");
-
-            assertThat(fetched1.getAlert().getAlertRule()).isNotNull();
-            assertThat(fetched1.getAlert().getAlertRule().getId()).isEqualTo(primaryRule.getId());
-            assertThat(fetched1.getAlert().getAlertRule().getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-        }
-
-        @Test
-        @DisplayName("should return empty list when no notifications match pending criteria")
-        void shouldReturnEmptyListWhenNoNotificationsMatchCriteria() {
-            persistNotification(primaryAlert, NotificationChannel.EMAIL, "dest1", NotificationStatus.PENDING, 3);
-
-            List<Notification> result = notificationRepository.findPendingForDispatch(NotificationStatus.PENDING, 3);
-
-            assertThat(result).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("findByIdWithDetails")
-    class FindByIdWithDetails {
-
-        @Test
-        @DisplayName("should eagerly fetch notification with alert, disaster event, alert rule, and location")
-        void shouldEagerlyFetchNotificationWithAllAssociatedDetails() {
-            Notification notification = persistNotification(primaryAlert, NotificationChannel.DISCORD, "Discord Server", NotificationStatus.PENDING, 0);
-
-            entityManager.flush();
-            entityManager.clear();
-
-            Optional<Notification> result = notificationRepository.findByIdWithDetails(notification.getId());
-
-            assertThat(result).isPresent();
-            Notification fetchedNotification = result.get();
-
-            assertThat(fetchedNotification.getId()).isEqualTo(notification.getId());
-            assertThat(fetchedNotification.getChannel()).isEqualTo(NotificationChannel.DISCORD);
-            assertThat(fetchedNotification.getDestination()).isEqualTo("Discord Server");
-            assertThat(fetchedNotification.getStatus()).isEqualTo(NotificationStatus.PENDING);
-
-            // Verify alert
-            Alert fetchedAlert = fetchedNotification.getAlert();
-            assertThat(fetchedAlert).isNotNull();
-            assertThat(fetchedAlert.getId()).isEqualTo(primaryAlert.getId());
-            assertThat(fetchedAlert.getStatus()).isEqualTo(AlertStatus.PENDING);
-
-            // Verify disaster event
-            DisasterEvent fetchedEvent = fetchedAlert.getDisasterEvent();
-            assertThat(fetchedEvent).isNotNull();
-            assertThat(fetchedEvent.getId()).isEqualTo(primaryDisasterEvent.getId());
-            assertThat(fetchedEvent.getSource()).isEqualTo("USGS");
-            assertThat(fetchedEvent.getExternalId()).isEqualTo("usgs-event-001");
-            assertThat(fetchedEvent.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-            assertThat(fetchedEvent.getMagnitude()).isEqualTo(6.2);
-
-            // Verify alert rule
-            AlertRule fetchedRule = fetchedAlert.getAlertRule();
-            assertThat(fetchedRule).isNotNull();
-            assertThat(fetchedRule.getId()).isEqualTo(primaryRule.getId());
-            assertThat(fetchedRule.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-            assertThat(fetchedRule.getRadiusKm()).isEqualTo(50.0);
-
-            // Verify location via alert rule
-            Location fetchedLocation = fetchedRule.getLocation();
-            assertThat(fetchedLocation).isNotNull();
-            assertThat(fetchedLocation.getId()).isEqualTo(primaryLocation.getId());
-            assertThat(fetchedLocation.getName()).isEqualTo("Home");
-            assertThat(fetchedLocation.getLatitude()).isEqualTo(14.5995);
-            assertThat(fetchedLocation.getLongitude()).isEqualTo(120.9842);
-
-            // Verify location user
-            User fetchedUser = fetchedLocation.getUser();
-            assertThat(fetchedUser).isNotNull();
-            assertThat(fetchedUser.getId()).isEqualTo(primaryUser.getId());
-            assertThat(fetchedUser.getEmail()).isEqualTo(primaryUser.getEmail());
-        }
-
-        @Test
-        @DisplayName("should return empty optional when notification ID does not exist")
-        void shouldReturnEmptyWhenNotificationIdDoesNotExist() {
-            Optional<Notification> result = notificationRepository.findByIdWithDetails(UUID.randomUUID());
-
-            assertThat(result).isEmpty();
         }
     }
 
