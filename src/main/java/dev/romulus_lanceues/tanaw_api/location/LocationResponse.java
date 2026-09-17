@@ -1,5 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.location;
 
+import dev.romulus_lanceues.tanaw_api.geo.area.GeoAreaSummary;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -10,6 +12,7 @@ public record LocationResponse(
         String address,
         double latitude,
         double longitude,
+        GeoAreaSummary geographicArea,
         Instant createdAt,
         Instant updatedAt
 ) {
