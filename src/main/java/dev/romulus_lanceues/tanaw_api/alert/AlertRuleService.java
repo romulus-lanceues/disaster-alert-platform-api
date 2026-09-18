@@ -59,10 +59,10 @@ public class AlertRuleService {
                 .toList();
     }
 
-    public List<AlertRuleResponse> getAlertRulesByLocation(UUID locationId) {
-        log.info("Fetching alert rules for location {}", locationId);
+    public List<AlertRuleResponse> getAlertRulesByLocation(UUID locationId, UUID userId) {
+        log.info("Fetching alert rules for location {} and user {}", locationId, userId);
 
-        return alertRuleRepository.findByLocationId(locationId)
+        return alertRuleRepository.findByLocationIdAndLocationUserId(locationId, userId)
                 .stream()
                 .map(AlertRuleResponse::from)
                 .toList();
