@@ -140,6 +140,13 @@
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
+		<!--Spring documentation dependency-->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>3.1.0</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>
