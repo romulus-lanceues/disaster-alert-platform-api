@@ -6,7 +6,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -19,14 +18,14 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
-    public UserResponse createUser(String email, String rawPassword) {
-        if (userRepository.existsByEmail(email)) {
-            throw new UserAlreadyExistsException("Email is already registered: " + email);
+    public UserResponse createUser(CreateUserRequest request) {
+        if (userRepository.existsByEmail(request.email())) {
+            throw new UserAlreadyExistsException("Email is already registered: " + request.email());
         }
 
         User user = User.builder()
-                .email(email)
-                .passwordHash(passwordEncoder.encode(rawPassword))
+                .email(request.email())
+                .passwordHash(passwordEncoder.encode(request.password()))
                 .status(UserStatus.ACTIVE)
                 .build();
 
@@ -37,43 +36,49 @@ public class UserService {
         return UserResponse.from(savedUser);
     }
 
-
-    public Optional<UserResponse> findById(UUID id) {
-        return userRepository.findById(id).map(UserResponse::from);
+    public UserResponse findById(UUID id) {
+        return userRepository.findById(id)
+                .map(UserResponse::from)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
     }
 
-
-    public Optional<UserResponse> findActiveByEmail(String email) {
-        return userRepository.findByEmailAndStatus(email, UserStatus.ACTIVE).map(UserResponse::from);
+    public UserResponse findActiveByEmail(String email) {
+        return userRepository.findByEmailAndStatus(email, UserStatus.ACTIVE)
+                .map(UserResponse::from)
+                .orElseThrow(() -> new UserNotFoundException("Active user not found with email: " + email));
     }
-
 
     @Transactional
-    public void changePassword(User user, String currentRawPassword, String newRawPassword) {
-        if (!verifyPassword(user, currentRawPassword)) {
-            throw new IllegalArgumentException("Current password is incorrect");
+    public void changePassword(UUID id, ChangePasswordRequest request) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
+
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new InvalidPasswordException("User account is not active");
         }
 
-        user.updatePassword(passwordEncoder.encode(newRawPassword));
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new InvalidPasswordException("Current password is incorrect");
+        }
+
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new InvalidPasswordException("New password cannot be the same as the current password");
+        }
+
+        user.updatePassword(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
 
         log.info("Password changed: userId={}", user.getId());
     }
 
-    public boolean verifyPassword(User user, String rawPassword) {
-        return passwordEncoder.matches(rawPassword, user.getPasswordHash());
-    }
-
     @Transactional
     public void disableUser(UUID id) {
         User user = userRepository.findById(id)
-                .orElseThrow( () -> new UserNotFoundException("User not found: " + id ));
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
 
         user.updateStatus(UserStatus.DISABLED);
         userRepository.save(user);
 
         log.info("User disabled: userId={}", user.getId());
     }
-
-
 }

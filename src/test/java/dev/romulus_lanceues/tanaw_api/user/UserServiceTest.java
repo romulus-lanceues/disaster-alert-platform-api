@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -41,43 +42,48 @@ class UserServiceTest {
         @DisplayName("should create and return user response when email is not taken")
         void shouldCreateAndReturnUser_whenEmailIsNotTaken() {
 
-            String email = "alice@example.com";
-            String rawPassword = "SecurePass123!";
+            CreateUserRequest request = new CreateUserRequest("alice@example.com", "SecurePass123!");
             String encodedPassword = "encoded_hash_abc";
             UUID userId = UUID.randomUUID();
 
             User savedUser = User.builder()
                     .id(userId)
-                    .email(email)
+                    .email(request.email())
                     .passwordHash(encodedPassword)
                     .status(UserStatus.ACTIVE)
                     .build();
 
-            given(userRepository.existsByEmail(email)).willReturn(false);
-            given(passwordEncoder.encode(rawPassword)).willReturn(encodedPassword);
+            given(userRepository.existsByEmail(request.email())).willReturn(false);
+            given(passwordEncoder.encode(request.password())).willReturn(encodedPassword);
             given(userRepository.save(any(User.class))).willReturn(savedUser);
 
-
-            UserResponse result = userService.createUser(email, rawPassword);
+            UserResponse result = userService.createUser(request);
 
             assertThat(result).isNotNull();
             assertThat(result.id()).isEqualTo(userId);
-            assertThat(result.email()).isEqualTo(email);
+            assertThat(result.email()).isEqualTo(request.email());
             assertThat(result.status()).isEqualTo(UserStatus.ACTIVE);
+
+            ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+            then(userRepository).should().save(captor.capture());
+
+            User createdUser = captor.getValue();
+            assertThat(createdUser.getEmail()).isEqualTo(savedUser.getEmail());
+            assertThat(createdUser.getPasswordHash()).isEqualTo(savedUser.getPasswordHash());
+            assertThat(createdUser.getStatus()).isEqualTo(savedUser.getStatus());
         }
 
         @Test
         @DisplayName("should throw UserAlreadyExistsException when email is already registered")
         void shouldThrowUserAlreadyExistsException_whenEmailIsAlreadyRegistered() {
 
-            String email = "alice@example.com";
+            CreateUserRequest request = new CreateUserRequest("alice@example.com", "AnyPassword1!");
 
-            given(userRepository.existsByEmail(email)).willReturn(true);
+            given(userRepository.existsByEmail(request.email())).willReturn(true);
 
-
-            assertThatThrownBy(() -> userService.createUser(email, "AnyPassword1!"))
+            assertThatThrownBy(() -> userService.createUser(request))
                     .isInstanceOf(UserAlreadyExistsException.class)
-                    .hasMessageContaining(email);
+                    .hasMessageContaining(request.email());
 
             then(userRepository).should(never()).save(any(User.class));
         }
@@ -101,28 +107,25 @@ class UserServiceTest {
 
             given(userRepository.findById(userId)).willReturn(Optional.of(user));
 
-            Optional<UserResponse> result = userService.findById(userId);
+            UserResponse result = userService.findById(userId);
 
-            assertThat(result)
-                    .isPresent()
-                    .hasValueSatisfying(found -> {
-                        assertThat(found.id()).isEqualTo(userId);
-                        assertThat(found.email()).isEqualTo("alice@example.com");
-                        assertThat(found.status()).isEqualTo(UserStatus.ACTIVE);
-                    });
+            assertThat(result).isNotNull();
+            assertThat(result.id()).isEqualTo(userId);
+            assertThat(result.email()).isEqualTo("alice@example.com");
+            assertThat(result.status()).isEqualTo(UserStatus.ACTIVE);
         }
 
         @Test
-        @DisplayName("should return empty when user does not exist")
-        void shouldReturnEmpty_whenUserDoesNotExist() {
+        @DisplayName("should throw UserNotFoundException when user does not exist")
+        void shouldThrowUserNotFoundException_whenUserDoesNotExist() {
 
             UUID userId = UUID.randomUUID();
 
             given(userRepository.findById(userId)).willReturn(Optional.empty());
 
-            Optional<UserResponse> result = userService.findById(userId);
-
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> userService.findById(userId))
+                    .isInstanceOf(UserNotFoundException.class)
+                    .hasMessageContaining(userId.toString());
         }
     }
 
@@ -146,73 +149,26 @@ class UserServiceTest {
             given(userRepository.findByEmailAndStatus(email, UserStatus.ACTIVE))
                     .willReturn(Optional.of(user));
 
-            Optional<UserResponse> result = userService.findActiveByEmail(email);
+            UserResponse result = userService.findActiveByEmail(email);
 
-            assertThat(result)
-                    .isPresent()
-                    .hasValueSatisfying(found -> {
-                        assertThat(found.id()).isEqualTo(userId);
-                        assertThat(found.email()).isEqualTo(email);
-                        assertThat(found.status()).isEqualTo(UserStatus.ACTIVE);
-                    });
+            assertThat(result).isNotNull();
+            assertThat(result.id()).isEqualTo(userId);
+            assertThat(result.email()).isEqualTo(email);
+            assertThat(result.status()).isEqualTo(UserStatus.ACTIVE);
         }
 
         @Test
-        @DisplayName("should return empty when no active user with email exists")
-        void shouldReturnEmpty_whenNoActiveUserWithEmailExists() {
+        @DisplayName("should throw UserNotFoundException when no active user with email exists")
+        void shouldThrowUserNotFoundException_whenNoActiveUserWithEmailExists() {
 
             String email = "disabled@example.com";
 
             given(userRepository.findByEmailAndStatus(email, UserStatus.ACTIVE))
                     .willReturn(Optional.empty());
 
-
-            Optional<UserResponse> result = userService.findActiveByEmail(email);
-
-            assertThat(result).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("verifyPassword")
-    class VerifyPassword {
-
-        @Test
-        @DisplayName("should return true when raw password matches stored hash")
-        void shouldReturnTrue_whenRawPasswordMatchesStoredHash() {
-
-            User user = User.builder()
-                    .id(UUID.randomUUID())
-                    .email("alice@example.com")
-                    .passwordHash("encoded_hash_abc")
-                    .status(UserStatus.ACTIVE)
-                    .build();
-
-            given(passwordEncoder.matches("CorrectPassword1!", "encoded_hash_abc"))
-                    .willReturn(true);
-
-            boolean result = userService.verifyPassword(user, "CorrectPassword1!");
-
-            assertThat(result).isTrue();
-        }
-
-        @Test
-        @DisplayName("should return false when raw password does not match stored hash")
-        void shouldReturnFalse_whenRawPasswordDoesNotMatchStoredHash() {
-
-            User user = User.builder()
-                    .id(UUID.randomUUID())
-                    .email("alice@example.com")
-                    .passwordHash("encoded_hash_abc")
-                    .status(UserStatus.ACTIVE)
-                    .build();
-
-            given(passwordEncoder.matches("WrongPassword!", "encoded_hash_abc"))
-                    .willReturn(false);
-
-            boolean result = userService.verifyPassword(user, "WrongPassword!");
-
-            assertThat(result).isFalse();
+            assertThatThrownBy(() -> userService.findActiveByEmail(email))
+                    .isInstanceOf(UserNotFoundException.class)
+                    .hasMessageContaining(email);
         }
     }
 
@@ -221,47 +177,118 @@ class UserServiceTest {
     class ChangePassword {
 
         @Test
-        @DisplayName("should update password when current password is correct")
+        @DisplayName("should update password when user exists, is active, and current password is correct")
         void shouldUpdatePassword_whenCurrentPasswordIsCorrect() {
 
+            UUID userId = UUID.randomUUID();
             User user = User.builder()
-                    .id(UUID.randomUUID())
+                    .id(userId)
                     .email("alice@example.com")
                     .passwordHash("old_encoded_hash")
                     .status(UserStatus.ACTIVE)
                     .build();
 
-            String currentRawPassword = "OldPassword1!";
-            String newRawPassword = "NewPassword2!";
+            ChangePasswordRequest request = new ChangePasswordRequest("OldPassword1!", "NewPassword2!");
             String newEncodedPassword = "new_encoded_hash";
 
-            given(passwordEncoder.matches(currentRawPassword, "old_encoded_hash"))
-                    .willReturn(true);
-            given(passwordEncoder.encode(newRawPassword)).willReturn(newEncodedPassword);
+            given(userRepository.findById(userId)).willReturn(Optional.of(user));
+            given(passwordEncoder.matches(request.currentPassword(), "old_encoded_hash")).willReturn(true);
+            given(passwordEncoder.matches(request.newPassword(), "old_encoded_hash")).willReturn(false);
+            given(passwordEncoder.encode(request.newPassword())).willReturn(newEncodedPassword);
 
-            userService.changePassword(user, currentRawPassword, newRawPassword);
+            userService.changePassword(userId, request);
 
             assertThat(user.getPasswordHash()).isEqualTo(newEncodedPassword);
             then(userRepository).should().save(user);
         }
 
         @Test
-        @DisplayName("should throw IllegalArgumentException when current password is incorrect")
-        void shouldThrowIllegalArgumentException_whenCurrentPasswordIsIncorrect() {
+        @DisplayName("should throw UserNotFoundException when user does not exist")
+        void shouldThrowUserNotFoundException_whenUserDoesNotExist() {
 
+            UUID userId = UUID.randomUUID();
+            ChangePasswordRequest request = new ChangePasswordRequest("OldPassword1!", "NewPassword2!");
+
+            given(userRepository.findById(userId)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> userService.changePassword(userId, request))
+                    .isInstanceOf(UserNotFoundException.class)
+                    .hasMessageContaining(userId.toString());
+
+            then(passwordEncoder).should(never()).matches(anyString(), anyString());
+            then(userRepository).should(never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw InvalidPasswordException when user is not active")
+        void shouldThrowInvalidPasswordException_whenUserIsNotActive() {
+
+            UUID userId = UUID.randomUUID();
             User user = User.builder()
-                    .id(UUID.randomUUID())
+                    .id(userId)
+                    .email("alice@example.com")
+                    .passwordHash("old_encoded_hash")
+                    .status(UserStatus.DISABLED)
+                    .build();
+
+            ChangePasswordRequest request = new ChangePasswordRequest("OldPassword1!", "NewPassword2!");
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(user));
+
+            assertThatThrownBy(() -> userService.changePassword(userId, request))
+                    .isInstanceOf(InvalidPasswordException.class)
+                    .hasMessageContaining("User account is not active");
+
+            then(passwordEncoder).should(never()).matches(anyString(), anyString());
+            then(userRepository).should(never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw InvalidPasswordException when current password is incorrect")
+        void shouldThrowInvalidPasswordException_whenCurrentPasswordIsIncorrect() {
+
+            UUID userId = UUID.randomUUID();
+            User user = User.builder()
+                    .id(userId)
                     .email("alice@example.com")
                     .passwordHash("encoded_hash_abc")
                     .status(UserStatus.ACTIVE)
                     .build();
 
-            given(passwordEncoder.matches("WrongPassword!", "encoded_hash_abc"))
-                    .willReturn(false);
+            ChangePasswordRequest request = new ChangePasswordRequest("WrongPassword!", "NewPass1!");
 
-            assertThatThrownBy(() -> userService.changePassword(user, "WrongPassword!", "NewPass1!"))
-                    .isInstanceOf(IllegalArgumentException.class)
+            given(userRepository.findById(userId)).willReturn(Optional.of(user));
+            given(passwordEncoder.matches(request.currentPassword(), "encoded_hash_abc")).willReturn(false);
+
+            assertThatThrownBy(() -> userService.changePassword(userId, request))
+                    .isInstanceOf(InvalidPasswordException.class)
                     .hasMessageContaining("Current password is incorrect");
+
+            then(passwordEncoder).should(never()).encode(anyString());
+            then(userRepository).should(never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("should throw InvalidPasswordException when new password is the same as current password")
+        void shouldThrowInvalidPasswordException_whenNewPasswordIsSameAsCurrentPassword() {
+
+            UUID userId = UUID.randomUUID();
+            User user = User.builder()
+                    .id(userId)
+                    .email("alice@example.com")
+                    .passwordHash("encoded_hash_abc")
+                    .status(UserStatus.ACTIVE)
+                    .build();
+
+            ChangePasswordRequest request = new ChangePasswordRequest("SamePassword1!", "SamePassword1!");
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(user));
+            given(passwordEncoder.matches(request.currentPassword(), "encoded_hash_abc")).willReturn(true);
+            given(passwordEncoder.matches(request.newPassword(), "encoded_hash_abc")).willReturn(true);
+
+            assertThatThrownBy(() -> userService.changePassword(userId, request))
+                    .isInstanceOf(InvalidPasswordException.class)
+                    .hasMessageContaining("New password cannot be the same as the current password");
 
             then(passwordEncoder).should(never()).encode(anyString());
             then(userRepository).should(never()).save(any(User.class));
