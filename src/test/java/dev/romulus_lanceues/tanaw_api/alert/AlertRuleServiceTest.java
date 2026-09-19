@@ -280,11 +280,12 @@ class AlertRuleServiceTest {
     class GetAlertRulesByLocation {
 
         @Test
-        @DisplayName("should return all alert rule responses for a location")
-        void shouldReturnAllAlertRuleResponses_forLocation() {
+        @DisplayName("should return all alert rule responses for a location owned by user")
+        void shouldReturnAllAlertRuleResponses_forLocationOwnedByUser() {
 
+            UUID userId = UUID.randomUUID();
             UUID locationId = UUID.randomUUID();
-            User user = buildUser(UUID.randomUUID());
+            User user = buildUser(userId);
             Location location = buildLocation(locationId, user);
 
             List<AlertRule> rules = List.of(
@@ -292,11 +293,11 @@ class AlertRuleServiceTest {
                     buildAlertRule(UUID.randomUUID(), location)
             );
 
-            given(alertRuleRepository.findByLocationId(locationId))
+            given(alertRuleRepository.findByLocationIdAndLocationUserId(locationId, userId))
                     .willReturn(rules);
 
 
-            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByLocation(locationId);
+            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByLocation(locationId, userId);
 
 
             assertThat(result).hasSize(2);
@@ -305,15 +306,16 @@ class AlertRuleServiceTest {
         }
 
         @Test
-        @DisplayName("should return empty list when location has no alert rules")
-        void shouldReturnEmptyList_whenLocationHasNoAlertRules() {
+        @DisplayName("should return empty list when location has no alert rules for user")
+        void shouldReturnEmptyList_whenLocationHasNoAlertRulesForUser() {
 
+            UUID userId = UUID.randomUUID();
             UUID locationId = UUID.randomUUID();
 
-            given(alertRuleRepository.findByLocationId(locationId))
+            given(alertRuleRepository.findByLocationIdAndLocationUserId(locationId, userId))
                     .willReturn(List.of());
 
-            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByLocation(locationId);
+            List<AlertRuleResponse> result = alertRuleService.getAlertRulesByLocation(locationId, userId);
 
             assertThat(result).isEmpty();
         }

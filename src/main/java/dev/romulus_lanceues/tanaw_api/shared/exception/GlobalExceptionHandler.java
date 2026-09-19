@@ -9,14 +9,24 @@ import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
 import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
 import dev.romulus_lanceues.tanaw_api.notification.NotificationAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.notification.NotificationNotFoundException;
+import dev.romulus_lanceues.tanaw_api.user.InvalidPasswordException;
 import dev.romulus_lanceues.tanaw_api.user.UserAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 
 @RestControllerAdvice
@@ -175,6 +185,43 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problem.setTitle("Notification Already Exists");
 
         return problem;
+    }
+
+    @ExceptionHandler(InvalidPasswordException.class)
+    public ProblemDetail handleException(InvalidPasswordException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Invalid Password");
+
+        return problem;
+    }
+    
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+        log.error("Validation failed: {}", ex.getMessage());
+
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+            errors.put(error.getField(), error.getDefaultMessage());
+        }
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                "Validation failed for one or more fields."
+        );
+        problem.setTitle("Validation Failed");
+        problem.setProperty("errors", errors);
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(headers).body(problem);
     }
 
 }

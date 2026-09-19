@@ -19,6 +19,8 @@ public interface AlertRuleRepository extends JpaRepository<AlertRule, UUID> {
 
     Optional<AlertRule> findByIdAndLocationUserId(UUID id, UUID userId);
 
+    List<AlertRule> findByLocationIdAndLocationUserId(UUID locationId, UUID userId);
+
     List<AlertRule> findByEnabledTrueAndDisasterType(DisasterType disasterType);
 
     /**
