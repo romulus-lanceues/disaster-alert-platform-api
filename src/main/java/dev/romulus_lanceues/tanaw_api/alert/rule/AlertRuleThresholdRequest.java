@@ -1,4 +1,4 @@
-package dev.romulus_lanceues.tanaw_api.alert;
+package dev.romulus_lanceues.tanaw_api.alert.rule;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.PositiveOrZero;

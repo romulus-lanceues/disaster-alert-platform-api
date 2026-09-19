@@ -1,5 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.alert;
 
+import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRule;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -1,4 +1,4 @@
-package dev.romulus_lanceues.tanaw_api.alert;
+package dev.romulus_lanceues.tanaw_api.alert.rule;
 
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import io.swagger.v3.oas.annotations.media.Schema;

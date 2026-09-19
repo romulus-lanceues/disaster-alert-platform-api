@@ -2,7 +2,7 @@ package dev.romulus_lanceues.tanaw_api.shared.exception;
 
 import dev.romulus_lanceues.tanaw_api.alert.AlertAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.alert.AlertNotFoundException;
-import dev.romulus_lanceues.tanaw_api.alert.AlertRuleNotFoundException;
+import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRuleNotFoundException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
