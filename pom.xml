@@ -147,6 +147,12 @@
 			<version>3.1.0</version>
 		</dependency>
 
+		<!--OAuth2 resource dependency for JWT validation-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+		</dependency>
+
 	</dependencies>
 
 	<build>

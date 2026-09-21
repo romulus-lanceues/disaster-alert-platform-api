@@ -29,3 +29,11 @@ springdoc:
     path: /swagger-ui.html
     operations-sorter: method
     tags-sorter: alpha
+
+security:
+  jwt:
+    issuer: "tanaw-api"
+    audience: "user"
+    access-token-duration: PT10M
+    refresh-token-duration: P30D
+    secret: ${JWT_SECRET}
