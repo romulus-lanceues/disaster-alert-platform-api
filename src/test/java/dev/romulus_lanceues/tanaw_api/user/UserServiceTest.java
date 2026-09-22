@@ -71,6 +71,7 @@ class UserServiceTest {
             assertThat(createdUser.getEmail()).isEqualTo(savedUser.getEmail());
             assertThat(createdUser.getPasswordHash()).isEqualTo(savedUser.getPasswordHash());
             assertThat(createdUser.getStatus()).isEqualTo(savedUser.getStatus());
+            assertThat(createdUser.getAuthenticationVersion()).isEqualTo(0L);
         }
 
         @Test

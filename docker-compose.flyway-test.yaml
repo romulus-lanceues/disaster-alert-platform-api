@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  flyway-test-db:
+    image: postgis/postgis:18-3.6
+    container_name: flyway-test-db
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: testdb
+    ports:
+      - "5454:5432"
+    tmpfs:
+      - /var/lib/postgresql

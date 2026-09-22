@@ -163,6 +163,19 @@
 			</plugin>
 
 			<plugin>
+				<groupId>org.flywaydb</groupId>
+				<artifactId>flyway-maven-plugin</artifactId>
+				<configuration>
+					<!--suppress UnresolvedMavenProperty -->
+					<url> jdbc:postgresql://localhost:${DB_PORT}/${DB_NAME}</url>
+					<!--suppress UnresolvedMavenProperty -->
+					<user>${DB_USER}</user>
+					<!--suppress UnresolvedMavenProperty -->
+					<password>${DB_PASSWORD}</password>
+				</configuration>
+			</plugin>
+
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>

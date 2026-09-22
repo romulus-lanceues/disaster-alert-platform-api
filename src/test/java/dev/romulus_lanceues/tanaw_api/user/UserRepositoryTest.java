@@ -61,7 +61,7 @@ class UserRepositoryTest {
     class PersistenceAndAuditing {
 
         @Test
-        @DisplayName("should persist user and generate audit fields")
+        @DisplayName("should persist user and generate audit fields with default authentication version")
         void shouldPersistUserAndGenerateAuditFields() {
             User user = User.builder()
                     .email("charlie@example.com")
@@ -74,6 +74,40 @@ class UserRepositoryTest {
             assertThat(saved.getId()).isNotNull();
             assertThat(saved.getCreatedAt()).isNotNull();
             assertThat(saved.getUpdatedAt()).isNotNull();
+            assertThat(saved.getAuthenticationVersion()).isEqualTo(0L);
+        }
+
+        @Test
+        @DisplayName("should persist user with custom authentication version")
+        void shouldPersistUserWithCustomAuthenticationVersion() {
+            User user = User.builder()
+                    .email("custom@example.com")
+                    .passwordHash("hash_custom_123")
+                    .status(UserStatus.ACTIVE)
+                    .authenticationVersion(3L)
+                    .build();
+
+            User saved = userRepository.saveAndFlush(user);
+
+            assertThat(saved.getAuthenticationVersion()).isEqualTo(3L);
+        }
+
+        @Test
+        @DisplayName("should update authentication version when incremented")
+        void shouldUpdateAuthenticationVersionWhenIncremented() {
+            User user = User.builder()
+                    .email("increment@example.com")
+                    .passwordHash("hash_increment_123")
+                    .status(UserStatus.ACTIVE)
+                    .build();
+
+            User saved = userRepository.saveAndFlush(user);
+            assertThat(saved.getAuthenticationVersion()).isEqualTo(0L);
+
+            saved.incrementAuthenticationVersion();
+            User updated = userRepository.saveAndFlush(saved);
+
+            assertThat(updated.getAuthenticationVersion()).isEqualTo(1L);
         }
     }
 
@@ -95,6 +129,7 @@ class UserRepositoryTest {
                         assertThat(user.getId()).isEqualTo(activeUser.getId());
                         assertThat(user.getEmail()).isEqualTo(activeUser.getEmail());
                         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+                        assertThat(user.getAuthenticationVersion()).isEqualTo(0L);
                     });
         }
 
@@ -147,6 +182,7 @@ class UserRepositoryTest {
                     .hasValueSatisfying(user -> {
                         assertThat(user.getId()).isEqualTo(activeUser.getId());
                         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+                        assertThat(user.getAuthenticationVersion()).isEqualTo(0L);
                     });
         }
 
