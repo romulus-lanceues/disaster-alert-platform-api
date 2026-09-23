@@ -3,6 +3,7 @@ package dev.romulus_lanceues.tanaw_api.shared.exception;
 import dev.romulus_lanceues.tanaw_api.alert.AlertAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.alert.AlertNotFoundException;
 import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRuleNotFoundException;
+import dev.romulus_lanceues.tanaw_api.auth.InvalidRefreshTokenException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
@@ -200,7 +201,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
         return problem;
     }
-    
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ProblemDetail handleException(InvalidRefreshTokenException ex) {
+        log.warn("Invalid refresh token attempt: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Invalid Refresh Token");
+
+        return problem;
+    }
+
+
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
             MethodArgumentNotValidException ex,

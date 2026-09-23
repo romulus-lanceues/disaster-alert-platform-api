@@ -54,4 +54,8 @@ public class RefreshTokenSession {
         this.replacedBy = next;
     }
 
+    public void revoke(Instant now) {
+        this.revokedAt = now;
+    }
+
 }

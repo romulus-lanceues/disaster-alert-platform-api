@@ -138,4 +138,26 @@ class RefreshTokenSessionTest {
             assertThat(currentSession.isActive(rotationTime)).isFalse();
         }
     }
+
+    @Nested
+    @DisplayName("revoke")
+    class Revoke {
+
+        @Test
+        @DisplayName("should set revokedAt and make session inactive")
+        void shouldSetRevokedAtAndMakeSessionInactive() {
+            RefreshTokenSession session = RefreshTokenSession.builder()
+                    .user(user)
+                    .familyId(familyId)
+                    .tokenHash("hash_current")
+                    .expiresAt(expiresAt)
+                    .build();
+
+            Instant revocationTime = now.plus(1, ChronoUnit.HOURS);
+            session.revoke(revocationTime);
+
+            assertThat(session.getRevokedAt()).isEqualTo(revocationTime);
+            assertThat(session.isActive(revocationTime)).isFalse();
+        }
+    }
 }
