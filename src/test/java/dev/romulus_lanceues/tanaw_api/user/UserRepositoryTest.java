@@ -204,4 +204,58 @@ class UserRepositoryTest {
             assertThat(found).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("findAuthState")
+    class FindAuthState {
+
+        @Test
+        @DisplayName("should return active auth state when user is active")
+        void shouldReturnActiveAuthStateWhenUserIsActive() {
+            User user = User.builder()
+                    .email("active-auth@example.com")
+                    .passwordHash("hash_123")
+                    .status(UserStatus.ACTIVE)
+                    .authenticationVersion(5L)
+                    .build();
+            User saved = entityManager.persistAndFlush(user);
+
+            Optional<UserAuthState> found = userRepository.findAuthState(saved.getId());
+
+            assertThat(found).isPresent().hasValueSatisfying(state -> {
+                assertThat(state.active()).isTrue();
+                assertThat(state.isActive()).isTrue();
+                assertThat(state.authenticationVersion()).isEqualTo(5L);
+            });
+        }
+
+        @Test
+        @DisplayName("should return inactive auth state when user is disabled")
+        void shouldReturnInactiveAuthStateWhenUserIsDisabled() {
+            User user = User.builder()
+                    .email("disabled-auth@example.com")
+                    .passwordHash("hash_456")
+                    .status(UserStatus.DISABLED)
+                    .authenticationVersion(2L)
+                    .build();
+            User saved = entityManager.persistAndFlush(user);
+
+            Optional<UserAuthState> found = userRepository.findAuthState(saved.getId());
+
+            assertThat(found).isPresent().hasValueSatisfying(state -> {
+                assertThat(state.active()).isFalse();
+                assertThat(state.isActive()).isFalse();
+                assertThat(state.authenticationVersion()).isEqualTo(2L);
+            });
+        }
+
+        @Test
+        @DisplayName("should return empty when user does not exist")
+        void shouldReturnEmptyWhenUserDoesNotExist() {
+            Optional<UserAuthState> found = userRepository.findAuthState(java.util.UUID.randomUUID());
+
+            assertThat(found).isEmpty();
+        }
+    }
 }
+

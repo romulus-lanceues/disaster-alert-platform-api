@@ -1,6 +1,8 @@
 package dev.romulus_lanceues.tanaw_api.shared.config;
 
+import dev.romulus_lanceues.tanaw_api.auth.JwtAuthConverter;
 import dev.romulus_lanceues.tanaw_api.auth.JwtProperties;
+import dev.romulus_lanceues.tanaw_api.user.UserRepository;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -37,6 +39,11 @@ public class SecurityConfig {
     @ConditionalOnMissingBean
     public Clock clock() {
         return Clock.systemUTC();
+    }
+
+    @Bean
+    public JwtAuthConverter jwtAuthConverter(UserRepository userRepository) {
+        return new JwtAuthConverter(userRepository);
     }
 
 }
