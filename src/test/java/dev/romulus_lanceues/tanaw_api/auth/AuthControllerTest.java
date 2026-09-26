@@ -1,8 +1,9 @@
 package dev.romulus_lanceues.tanaw_api.auth;
 
-import dev.romulus_lanceues.tanaw_api.config.TestSecurityConfig;
+import dev.romulus_lanceues.tanaw_api.shared.config.SecurityConfig;
 import dev.romulus_lanceues.tanaw_api.shared.exception.GlobalExceptionHandler;
 import dev.romulus_lanceues.tanaw_api.user.UserAlreadyExistsException;
+import dev.romulus_lanceues.tanaw_api.user.UserRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
@@ -36,7 +38,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class, AuthCookieHelper.class, AuthControllerTest.TestConfig.class})
+@Import({
+        SecurityConfig.class,
+        GlobalExceptionHandler.class,
+        AuthCookieHelper.class,
+        ProblemDetailsAuthenticationEntryPoint.class,
+        ProblemDetailsAccessDeniedHandler.class,
+        AuthControllerTest.TestConfig.class
+})
+@TestPropertySource(properties = {
+        "JWT_SECRET=dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="
+})
 @DisplayName("AuthController WebMvc Tests")
 class AuthControllerTest {
 
@@ -50,6 +62,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @MockitoBean
+    private UserRepository userRepository;
     @TestConfiguration
     static class TestConfig {
         @Bean

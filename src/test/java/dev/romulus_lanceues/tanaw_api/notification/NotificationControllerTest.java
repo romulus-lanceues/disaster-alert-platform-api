@@ -1,9 +1,17 @@
 package dev.romulus_lanceues.tanaw_api.notification;
 
 import dev.romulus_lanceues.tanaw_api.alert.AlertStatus;
-import dev.romulus_lanceues.tanaw_api.config.TestSecurityConfig;
+import dev.romulus_lanceues.tanaw_api.auth.JwtProperties;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAccessDeniedHandler;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAuthenticationEntryPoint;
+import dev.romulus_lanceues.tanaw_api.auth.TestJwtFactory;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
+import dev.romulus_lanceues.tanaw_api.shared.config.SecurityConfig;
 import dev.romulus_lanceues.tanaw_api.shared.exception.GlobalExceptionHandler;
+import dev.romulus_lanceues.tanaw_api.user.UserAuthState;
+import dev.romulus_lanceues.tanaw_api.user.UserRepository;
+import dev.romulus_lanceues.tanaw_api.user.UserStatus;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,15 +21,20 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -32,7 +45,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(NotificationController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
+@Import({
+        SecurityConfig.class,
+        GlobalExceptionHandler.class,
+        ProblemDetailsAuthenticationEntryPoint.class,
+        ProblemDetailsAccessDeniedHandler.class
+})
+@TestPropertySource(properties = {
+        "JWT_SECRET=dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="
+})
 @DisplayName("NotificationController Tests")
 class NotificationControllerTest {
 
@@ -41,8 +62,28 @@ class NotificationControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private JwtProperties jwtProperties;
+
+    @Autowired
+    private Clock clock;
+
     @MockitoBean
     private NotificationService notificationService;
+
+    @MockitoBean
+    private UserRepository userRepository;
+
+    private String validToken;
+
+    @BeforeEach
+    void setUp() {
+        TestJwtFactory jwtFactory = new TestJwtFactory(jwtProperties, clock);
+        validToken = jwtFactory.createValidToken();
+
+        given(userRepository.findAuthState(any(UUID.class)))
+                .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 0L)));
+    }
 
     @Nested
     @DisplayName("getNotifications (GET /api/v1/notifications?userId={userId})")
@@ -60,7 +101,9 @@ class NotificationControllerTest {
                     pageableMatching(0, 10)
             )).willReturn(new PageImpl<>(List.of(response), PageRequest.of(0, 10), 1));
 
-            mockMvc.perform(get(BASE_URL).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content", hasSize(1)))
                     .andExpect(jsonPath("$.content[0].id", is(response.id().toString())))
@@ -84,6 +127,7 @@ class NotificationControllerTest {
             )).willReturn(new PageImpl<>(List.of(response), PageRequest.of(1, 5), 6));
 
             mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString())
                             .param("status", "SENT")
                             .param("page", "1")
@@ -107,7 +151,9 @@ class NotificationControllerTest {
             given(notificationService.getNotificationsForUser(eq(userId), isNull(), pageableMatching(0, 10)))
                     .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
 
-            mockMvc.perform(get(BASE_URL).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content", hasSize(0)));
 
@@ -118,6 +164,7 @@ class NotificationControllerTest {
         @DisplayName("should return 400 Bad Request for invalid request parameters")
         void shouldReturnBadRequest_forInvalidRequestParameters() throws Exception {
             mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", "not-a-uuid")
                             .param("status", "UNKNOWN")
                             .param("page", "-1")
@@ -130,7 +177,8 @@ class NotificationControllerTest {
         @Test
         @DisplayName("should return 400 Bad Request when userId is missing")
         void shouldReturnBadRequest_whenUserIdIsMissing() throws Exception {
-            mockMvc.perform(get(BASE_URL))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isBadRequest());
 
             then(notificationService).shouldHaveNoInteractions();
@@ -140,6 +188,7 @@ class NotificationControllerTest {
         @DisplayName("should return 400 Bad Request when the page size exceeds the maximum")
         void shouldReturnBadRequest_whenPageSizeExceedsMaximum() throws Exception {
             mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", UUID.randomUUID().toString())
                             .param("size", "11"))
                     .andExpect(status().isBadRequest());
@@ -161,7 +210,9 @@ class NotificationControllerTest {
 
             given(notificationService.getNotificationForUser(notificationId, userId)).willReturn(response);
 
-            mockMvc.perform(get(BASE_URL + "/{id}", notificationId).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL + "/{id}", notificationId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(notificationId.toString())))
                     .andExpect(jsonPath("$.status", is("SENT")));
@@ -178,7 +229,9 @@ class NotificationControllerTest {
             given(notificationService.getNotificationForUser(notificationId, userId))
                     .willThrow(new NotificationNotFoundException("Notification not found: " + notificationId));
 
-            mockMvc.perform(get(BASE_URL + "/{id}", notificationId).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL + "/{id}", notificationId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Notification Not Found")))
                     .andExpect(jsonPath("$.detail", is("Notification not found: " + notificationId)));
@@ -189,7 +242,8 @@ class NotificationControllerTest {
         @Test
         @DisplayName("should return 400 Bad Request when required UUID parameters are invalid or missing")
         void shouldReturnBadRequest_whenRequiredUuidParametersAreInvalidOrMissing() throws Exception {
-            mockMvc.perform(get(BASE_URL + "/not-a-uuid"))
+            mockMvc.perform(get(BASE_URL + "/not-a-uuid")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isBadRequest());
 
             then(notificationService).shouldHaveNoInteractions();
@@ -198,7 +252,8 @@ class NotificationControllerTest {
         @Test
         @DisplayName("should return 400 Bad Request when userId is missing")
         void shouldReturnBadRequest_whenUserIdIsMissing() throws Exception {
-            mockMvc.perform(get(BASE_URL + "/{id}", UUID.randomUUID()))
+            mockMvc.perform(get(BASE_URL + "/{id}", UUID.randomUUID())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isBadRequest());
 
             then(notificationService).shouldHaveNoInteractions();

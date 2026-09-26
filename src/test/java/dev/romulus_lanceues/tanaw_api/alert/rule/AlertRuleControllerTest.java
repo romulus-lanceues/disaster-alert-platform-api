@@ -1,22 +1,34 @@
 package dev.romulus_lanceues.tanaw_api.alert.rule;
 
-import dev.romulus_lanceues.tanaw_api.config.TestSecurityConfig;
+import dev.romulus_lanceues.tanaw_api.auth.JwtProperties;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAccessDeniedHandler;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAuthenticationEntryPoint;
+import dev.romulus_lanceues.tanaw_api.auth.TestJwtFactory;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
+import dev.romulus_lanceues.tanaw_api.shared.config.SecurityConfig;
 import dev.romulus_lanceues.tanaw_api.shared.exception.GlobalExceptionHandler;
+import dev.romulus_lanceues.tanaw_api.user.UserAuthState;
+import dev.romulus_lanceues.tanaw_api.user.UserRepository;
+import dev.romulus_lanceues.tanaw_api.user.UserStatus;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.endsWith;
@@ -28,6 +40,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -37,7 +50,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AlertRuleController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
+@Import({
+        SecurityConfig.class,
+        GlobalExceptionHandler.class,
+        ProblemDetailsAuthenticationEntryPoint.class,
+        ProblemDetailsAccessDeniedHandler.class
+})
+@TestPropertySource(properties = {
+        "JWT_SECRET=dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="
+})
 @DisplayName("AlertRuleController Tests")
 class AlertRuleControllerTest {
 
@@ -49,8 +70,28 @@ class AlertRuleControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtProperties jwtProperties;
+
+    @Autowired
+    private Clock clock;
+
     @MockitoBean
     private AlertRuleService alertRuleService;
+
+    @MockitoBean
+    private UserRepository userRepository;
+
+    private String validToken;
+
+    @BeforeEach
+    void setUp() {
+        TestJwtFactory jwtFactory = new TestJwtFactory(jwtProperties, clock);
+        validToken = jwtFactory.createValidToken();
+
+        given(userRepository.findAuthState(any(UUID.class)))
+                .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 0L)));
+    }
 
     private AlertRuleResponse buildResponse(UUID id, UUID locationId) {
         Instant now = Instant.parse("2026-09-18T10:00:00Z");
@@ -67,7 +108,6 @@ class AlertRuleControllerTest {
                 now
         );
     }
-
 
     @Nested
     @DisplayName("createAlertRule (POST /api/v1/alert-rules)")
@@ -88,6 +128,8 @@ class AlertRuleControllerTest {
             given(alertRuleService.createAlertRule(any(AlertRuleRequest.class))).willReturn(response);
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -111,6 +153,8 @@ class AlertRuleControllerTest {
                     null, null, null, null, null, null);
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest())
@@ -129,6 +173,8 @@ class AlertRuleControllerTest {
                     UUID.randomUUID(), UUID.randomUUID(), DisasterType.EARTHQUAKE, -1.0, -5.0, null);
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest())
@@ -152,6 +198,8 @@ class AlertRuleControllerTest {
                     .willThrow(new LocationNotFoundException("Location not found: " + locationId));
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound())
@@ -161,7 +209,6 @@ class AlertRuleControllerTest {
             then(alertRuleService).should().createAlertRule(request);
         }
     }
-
 
     @Nested
     @DisplayName("getAlertRules by user (GET /api/v1/alert-rules?userId={userId})")
@@ -181,7 +228,9 @@ class AlertRuleControllerTest {
 
             given(alertRuleService.getAlertRulesByUser(userId)).willReturn(rules);
 
-            mockMvc.perform(get(BASE_URL).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(2)))
                     .andExpect(jsonPath("$[0].id", is(ruleId1.toString())))
@@ -197,14 +246,15 @@ class AlertRuleControllerTest {
 
             given(alertRuleService.getAlertRulesByUser(userId)).willReturn(List.of());
 
-            mockMvc.perform(get(BASE_URL).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(0)));
 
             then(alertRuleService).should().getAlertRulesByUser(userId);
         }
     }
-
 
     @Nested
     @DisplayName("getAlertRules by location (GET /api/v1/alert-rules?userId={userId}&locationId={locationId})")
@@ -222,6 +272,7 @@ class AlertRuleControllerTest {
             given(alertRuleService.getAlertRulesByLocation(locationId, userId)).willReturn(rules);
 
             mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString())
                             .param("locationId", locationId.toString()))
                     .andExpect(status().isOk())
@@ -241,6 +292,7 @@ class AlertRuleControllerTest {
             given(alertRuleService.getAlertRulesByLocation(locationId, userId)).willReturn(List.of());
 
             mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString())
                             .param("locationId", locationId.toString()))
                     .andExpect(status().isOk())
@@ -249,7 +301,6 @@ class AlertRuleControllerTest {
             then(alertRuleService).should().getAlertRulesByLocation(locationId, userId);
         }
     }
-
 
     @Nested
     @DisplayName("getAlertRule (GET /api/v1/alert-rules/{id}?userId={userId})")
@@ -266,7 +317,9 @@ class AlertRuleControllerTest {
 
             given(alertRuleService.getAlertRule(ruleId, userId)).willReturn(response);
 
-            mockMvc.perform(get(BASE_URL + "/{id}", ruleId).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL + "/{id}", ruleId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(ruleId.toString())))
                     .andExpect(jsonPath("$.locationId", is(locationId.toString())))
@@ -288,7 +341,9 @@ class AlertRuleControllerTest {
             given(alertRuleService.getAlertRule(ruleId, userId))
                     .willThrow(new AlertRuleNotFoundException("Alert rule not found: " + ruleId));
 
-            mockMvc.perform(get(BASE_URL + "/{id}", ruleId).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL + "/{id}", ruleId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Alert Rule Not Found")))
                     .andExpect(jsonPath("$.detail", is("Alert rule not found: " + ruleId)));
@@ -319,6 +374,8 @@ class AlertRuleControllerTest {
                     .willReturn(response);
 
             mockMvc.perform(patch(BASE_URL + "/{id}/thresholds", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
@@ -349,6 +406,8 @@ class AlertRuleControllerTest {
                     .willReturn(response);
 
             mockMvc.perform(patch(BASE_URL + "/{id}/thresholds", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
@@ -369,6 +428,8 @@ class AlertRuleControllerTest {
             AlertRuleThresholdRequest request = new AlertRuleThresholdRequest(-1.0, -5.0, null);
 
             mockMvc.perform(patch(BASE_URL + "/{id}/thresholds", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
@@ -392,6 +453,8 @@ class AlertRuleControllerTest {
                     .willThrow(new AlertRuleNotFoundException("Alert rule not found: " + ruleId));
 
             mockMvc.perform(patch(BASE_URL + "/{id}/thresholds", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
@@ -419,6 +482,8 @@ class AlertRuleControllerTest {
             given(alertRuleService.enableAlertRule(ruleId, userId)).willReturn(response);
 
             mockMvc.perform(patch(BASE_URL + "/{id}/enable", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(ruleId.toString())))
@@ -437,6 +502,8 @@ class AlertRuleControllerTest {
                     .willThrow(new AlertRuleNotFoundException("Alert rule not found: " + ruleId));
 
             mockMvc.perform(patch(BASE_URL + "/{id}/enable", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Alert Rule Not Found")))
@@ -465,6 +532,8 @@ class AlertRuleControllerTest {
             given(alertRuleService.disableAlertRule(ruleId, userId)).willReturn(response);
 
             mockMvc.perform(patch(BASE_URL + "/{id}/disable", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(ruleId.toString())))
@@ -483,6 +552,8 @@ class AlertRuleControllerTest {
                     .willThrow(new AlertRuleNotFoundException("Alert rule not found: " + ruleId));
 
             mockMvc.perform(patch(BASE_URL + "/{id}/disable", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Alert Rule Not Found")))
@@ -505,6 +576,8 @@ class AlertRuleControllerTest {
             doNothing().when(alertRuleService).deleteAlertRule(ruleId, userId);
 
             mockMvc.perform(delete(BASE_URL + "/{id}", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString()))
                     .andExpect(status().isNoContent());
 
@@ -521,6 +594,8 @@ class AlertRuleControllerTest {
                     .when(alertRuleService).deleteAlertRule(ruleId, userId);
 
             mockMvc.perform(delete(BASE_URL + "/{id}", ruleId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .param("userId", userId.toString()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Alert Rule Not Found")))

@@ -1,19 +1,28 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
-import dev.romulus_lanceues.tanaw_api.config.TestSecurityConfig;
+import dev.romulus_lanceues.tanaw_api.auth.JwtProperties;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAccessDeniedHandler;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAuthenticationEntryPoint;
+import dev.romulus_lanceues.tanaw_api.auth.TestJwtFactory;
+import dev.romulus_lanceues.tanaw_api.shared.config.SecurityConfig;
 import dev.romulus_lanceues.tanaw_api.shared.exception.GlobalExceptionHandler;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.endsWith;
@@ -24,6 +33,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -33,7 +43,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
+@Import({
+        SecurityConfig.class,
+        GlobalExceptionHandler.class,
+        ProblemDetailsAuthenticationEntryPoint.class,
+        ProblemDetailsAccessDeniedHandler.class
+})
+@TestPropertySource(properties = {
+        "JWT_SECRET=dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="
+})
 @DisplayName("UserController Tests")
 class UserControllerTest {
 
@@ -45,8 +63,28 @@ class UserControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtProperties jwtProperties;
+
+    @Autowired
+    private Clock clock;
+
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private UserRepository userRepository;
+
+    private String validToken;
+
+    @BeforeEach
+    void setUp() {
+        TestJwtFactory jwtFactory = new TestJwtFactory(jwtProperties, clock);
+        validToken = jwtFactory.createValidToken();
+
+        given(userRepository.findAuthState(any(UUID.class)))
+                .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 0L)));
+    }
 
     @Nested
     @DisplayName("createUser (POST /api/v1/users)")
@@ -63,6 +101,8 @@ class UserControllerTest {
             given(userService.createUser(any(CreateUserRequest.class))).willReturn(response);
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -82,6 +122,8 @@ class UserControllerTest {
             CreateUserRequest invalidRequest = new CreateUserRequest("invalid-email", "short");
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest())
@@ -101,6 +143,8 @@ class UserControllerTest {
                     .willThrow(new UserAlreadyExistsException("Email is already registered: " + request.email()));
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isConflict())
@@ -124,7 +168,8 @@ class UserControllerTest {
 
             given(userService.findById(userId)).willReturn(response);
 
-            mockMvc.perform(get(BASE_URL + "/{id}", userId))
+            mockMvc.perform(get(BASE_URL + "/{id}", userId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(userId.toString())))
                     .andExpect(jsonPath("$.email", is("alice@example.com")))
@@ -143,7 +188,8 @@ class UserControllerTest {
             given(userService.findById(userId))
                     .willThrow(new UserNotFoundException("User not found: " + userId));
 
-            mockMvc.perform(get(BASE_URL + "/{id}", userId))
+            mockMvc.perform(get(BASE_URL + "/{id}", userId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("User Not Found")))
                     .andExpect(jsonPath("$.detail", is("User not found: " + userId)));
@@ -166,7 +212,8 @@ class UserControllerTest {
 
             given(userService.findActiveByEmail(email)).willReturn(response);
 
-            mockMvc.perform(get(BASE_URL).param("email", email))
+            mockMvc.perform(get(BASE_URL).param("email", email)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(userId.toString())))
                     .andExpect(jsonPath("$.email", is(email)))
@@ -185,7 +232,8 @@ class UserControllerTest {
             given(userService.findActiveByEmail(email))
                     .willThrow(new UserNotFoundException("Active user not found with email: " + email));
 
-            mockMvc.perform(get(BASE_URL).param("email", email))
+            mockMvc.perform(get(BASE_URL).param("email", email)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("User Not Found")))
                     .andExpect(jsonPath("$.detail", is("Active user not found with email: " + email)));
@@ -207,6 +255,8 @@ class UserControllerTest {
             willDoNothing().given(userService).changePassword(eq(userId), any(ChangePasswordRequest.class));
 
             mockMvc.perform(patch(BASE_URL + "/{id}/password", userId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNoContent());
@@ -221,6 +271,8 @@ class UserControllerTest {
             ChangePasswordRequest invalidRequest = new ChangePasswordRequest("", "short");
 
             mockMvc.perform(patch(BASE_URL + "/{id}/password", userId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest())
@@ -241,6 +293,8 @@ class UserControllerTest {
                     .given(userService).changePassword(eq(userId), any(ChangePasswordRequest.class));
 
             mockMvc.perform(patch(BASE_URL + "/{id}/password", userId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -260,6 +314,8 @@ class UserControllerTest {
                     .given(userService).changePassword(eq(userId), any(ChangePasswordRequest.class));
 
             mockMvc.perform(patch(BASE_URL + "/{id}/password", userId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound())
@@ -281,7 +337,9 @@ class UserControllerTest {
 
             willDoNothing().given(userService).disableUser(userId);
 
-            mockMvc.perform(delete(BASE_URL + "/{id}", userId))
+            mockMvc.perform(delete(BASE_URL + "/{id}", userId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isNoContent());
 
             then(userService).should().disableUser(userId);
@@ -295,7 +353,9 @@ class UserControllerTest {
             willThrow(new UserNotFoundException("User not found: " + userId))
                     .given(userService).disableUser(userId);
 
-            mockMvc.perform(delete(BASE_URL + "/{id}", userId))
+            mockMvc.perform(delete(BASE_URL + "/{id}", userId)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("User Not Found")))
                     .andExpect(jsonPath("$.detail", is("User not found: " + userId)));

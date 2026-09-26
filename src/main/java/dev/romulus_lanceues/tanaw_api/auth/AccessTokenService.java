@@ -24,6 +24,8 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
@@ -39,15 +41,26 @@ public class AccessTokenService {
     private final JwtEncoder jwtEncoder;
     private final JwtDecoder jwtDecoder;
 
-    public AccessTokenService(JwtProperties jwtProperties, Clock clock) {
+    @Autowired
+    public AccessTokenService(JwtProperties jwtProperties, Clock clock, JwtDecoder jwtDecoder) {
         this.jwtProperties = jwtProperties;
         this.clock = clock;
+        this.jwtDecoder = jwtDecoder;
 
         byte[] keyBytes = Base64.getDecoder().decode(jwtProperties.secret());
         SecretKey secretKey = new SecretKeySpec(keyBytes, "HmacSHA256");
 
         JWKSource<SecurityContext> jwkSource = new ImmutableSecret<>(secretKey);
         this.jwtEncoder = new NimbusJwtEncoder(jwkSource);
+    }
+
+    public AccessTokenService(JwtProperties jwtProperties, Clock clock) {
+        this(jwtProperties, clock, createJwtDecoder(jwtProperties, clock));
+    }
+
+    public static JwtDecoder createJwtDecoder(JwtProperties jwtProperties, Clock clock) {
+        byte[] keyBytes = Base64.getDecoder().decode(jwtProperties.secret());
+        SecretKey secretKey = new SecretKeySpec(keyBytes, "HmacSHA256");
 
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey)
                 .macAlgorithm(MacAlgorithm.HS256)
@@ -68,8 +81,9 @@ public class AccessTokenService {
                 issuerValidator,
                 audienceValidator
         ));
-        this.jwtDecoder = decoder;
+        return decoder;
     }
+
 
     public String generateToken(UUID userId, long authenticationVersion) {
 

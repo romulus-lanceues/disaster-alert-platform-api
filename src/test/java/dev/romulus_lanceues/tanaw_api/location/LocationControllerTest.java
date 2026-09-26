@@ -1,24 +1,36 @@
 package dev.romulus_lanceues.tanaw_api.location;
 
-import dev.romulus_lanceues.tanaw_api.config.TestSecurityConfig;
+import dev.romulus_lanceues.tanaw_api.auth.JwtProperties;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAccessDeniedHandler;
+import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAuthenticationEntryPoint;
+import dev.romulus_lanceues.tanaw_api.auth.TestJwtFactory;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeoAreaSummary;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaType;
+import dev.romulus_lanceues.tanaw_api.shared.config.SecurityConfig;
 import dev.romulus_lanceues.tanaw_api.shared.exception.GlobalExceptionHandler;
+import dev.romulus_lanceues.tanaw_api.user.UserAuthState;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;
+import dev.romulus_lanceues.tanaw_api.user.UserRepository;
+import dev.romulus_lanceues.tanaw_api.user.UserStatus;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.endsWith;
@@ -27,6 +39,7 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -34,7 +47,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(LocationController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
+@Import({
+        SecurityConfig.class,
+        GlobalExceptionHandler.class,
+        ProblemDetailsAuthenticationEntryPoint.class,
+        ProblemDetailsAccessDeniedHandler.class
+})
+@TestPropertySource(properties = {
+        "JWT_SECRET=dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="
+})
 @DisplayName("LocationController Tests")
 class LocationControllerTest {
 
@@ -46,8 +67,28 @@ class LocationControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtProperties jwtProperties;
+
+    @Autowired
+    private Clock clock;
+
     @MockitoBean
     private LocationService locationService;
+
+    @MockitoBean
+    private UserRepository userRepository;
+
+    private String validToken;
+
+    @BeforeEach
+    void setUp() {
+        TestJwtFactory jwtFactory = new TestJwtFactory(jwtProperties, clock);
+        validToken = jwtFactory.createValidToken();
+
+        given(userRepository.findAuthState(any(UUID.class)))
+                .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 0L)));
+    }
 
     @Nested
     @DisplayName("createLocation (POST /api/v1/locations)")
@@ -92,6 +133,8 @@ class LocationControllerTest {
             given(locationService.createLocation(any(LocationRequest.class))).willReturn(response);
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -125,6 +168,8 @@ class LocationControllerTest {
             );
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest())
@@ -156,6 +201,8 @@ class LocationControllerTest {
                     .willThrow(new UserNotFoundException("User not found: " + userId));
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound())
@@ -182,6 +229,8 @@ class LocationControllerTest {
                     .willThrow(new GeographicAreaNotFoundException("Geographic area not found with PSGC code: 999999999"));
 
             mockMvc.perform(post(BASE_URL)
+                            .with(csrf())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound())
@@ -236,7 +285,9 @@ class LocationControllerTest {
 
             given(locationService.getLocationsByUser(userId)).willReturn(List.of(loc1, loc2));
 
-            mockMvc.perform(get(BASE_URL).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(2)))
                     .andExpect(jsonPath("$[0].id", is(locId1.toString())))
@@ -268,7 +319,9 @@ class LocationControllerTest {
 
             given(locationService.getLocationsByUser(userId)).willReturn(List.of());
 
-            mockMvc.perform(get(BASE_URL).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(0)));
 
@@ -283,7 +336,9 @@ class LocationControllerTest {
             given(locationService.getLocationsByUser(userId))
                     .willThrow(new UserNotFoundException("User not found: " + userId));
 
-            mockMvc.perform(get(BASE_URL).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("User Not Found")))
                     .andExpect(jsonPath("$.detail", is("User not found: " + userId)));
@@ -325,7 +380,9 @@ class LocationControllerTest {
 
             given(locationService.getLocation(locationId, userId)).willReturn(response);
 
-            mockMvc.perform(get(BASE_URL + "/{id}", locationId).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL + "/{id}", locationId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(locationId.toString())))
                     .andExpect(jsonPath("$.userId", is(userId.toString())))
@@ -352,7 +409,9 @@ class LocationControllerTest {
             given(locationService.getLocation(locationId, userId))
                     .willThrow(new LocationNotFoundException("Location not found: " + locationId));
 
-            mockMvc.perform(get(BASE_URL + "/{id}", locationId).param("userId", userId.toString()))
+            mockMvc.perform(get(BASE_URL + "/{id}", locationId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .param("userId", userId.toString()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Location Not Found")))
                     .andExpect(jsonPath("$.detail", is("Location not found: " + locationId)));
