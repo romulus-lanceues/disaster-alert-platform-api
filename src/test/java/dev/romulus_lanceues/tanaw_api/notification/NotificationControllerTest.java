@@ -74,25 +74,25 @@ class NotificationControllerTest {
     @MockitoBean
     private UserRepository userRepository;
 
-    private String validToken;
+    private TestJwtFactory jwtFactory;
 
     @BeforeEach
     void setUp() {
-        TestJwtFactory jwtFactory = new TestJwtFactory(jwtProperties, clock);
-        validToken = jwtFactory.createValidToken();
+        jwtFactory = new TestJwtFactory(jwtProperties, clock);
 
         given(userRepository.findAuthState(any(UUID.class)))
                 .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 0L)));
     }
 
     @Nested
-    @DisplayName("getNotifications (GET /api/v1/notifications?userId={userId})")
+    @DisplayName("getNotifications (GET /api/v1/notifications)")
     class GetNotifications {
 
         @Test
-        @DisplayName("should return notifications for a user using default pagination and newest-first sorting")
+        @DisplayName("should return notifications for authenticated user using default pagination and newest-first sorting")
         void shouldReturnNotificationsForUser_withDefaultPaginationAndNewestFirstSorting() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             NotificationResponse response = notificationResponse(UUID.randomUUID(), NotificationStatus.PENDING);
 
             given(notificationService.getNotificationsForUser(
@@ -102,8 +102,7 @@ class NotificationControllerTest {
             )).willReturn(new PageImpl<>(List.of(response), PageRequest.of(0, 10), 1));
 
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content", hasSize(1)))
                     .andExpect(jsonPath("$.content[0].id", is(response.id().toString())))
@@ -118,6 +117,7 @@ class NotificationControllerTest {
         @DisplayName("should pass the status filter and requested pagination to the service")
         void shouldPassStatusFilterAndRequestedPaginationToService() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             NotificationResponse response = notificationResponse(UUID.randomUUID(), NotificationStatus.SENT);
 
             given(notificationService.getNotificationsForUser(
@@ -127,8 +127,7 @@ class NotificationControllerTest {
             )).willReturn(new PageImpl<>(List.of(response), PageRequest.of(1, 5), 6));
 
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .param("status", "SENT")
                             .param("page", "1")
                             .param("size", "5"))
@@ -147,13 +146,13 @@ class NotificationControllerTest {
         @DisplayName("should return an empty page when the user has no notifications")
         void shouldReturnEmptyPage_whenUserHasNoNotifications() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
 
             given(notificationService.getNotificationsForUser(eq(userId), isNull(), pageableMatching(0, 10)))
                     .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
 
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content", hasSize(0)));
 
@@ -163,9 +162,11 @@ class NotificationControllerTest {
         @Test
         @DisplayName("should return 400 Bad Request for invalid request parameters")
         void shouldReturnBadRequest_forInvalidRequestParameters() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
+
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", "not-a-uuid")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .param("status", "UNKNOWN")
                             .param("page", "-1")
                             .param("size", "11"))
@@ -175,21 +176,13 @@ class NotificationControllerTest {
         }
 
         @Test
-        @DisplayName("should return 400 Bad Request when userId is missing")
-        void shouldReturnBadRequest_whenUserIdIsMissing() throws Exception {
-            mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
-                    .andExpect(status().isBadRequest());
-
-            then(notificationService).shouldHaveNoInteractions();
-        }
-
-        @Test
         @DisplayName("should return 400 Bad Request when the page size exceeds the maximum")
         void shouldReturnBadRequest_whenPageSizeExceedsMaximum() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
+
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", UUID.randomUUID().toString())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .param("size", "11"))
                     .andExpect(status().isBadRequest());
 
@@ -198,21 +191,21 @@ class NotificationControllerTest {
     }
 
     @Nested
-    @DisplayName("getNotification (GET /api/v1/notifications/{id}?userId={userId})")
+    @DisplayName("getNotification (GET /api/v1/notifications/{id})")
     class GetNotification {
 
         @Test
-        @DisplayName("should return a notification owned by the user")
+        @DisplayName("should return a notification owned by the authenticated user")
         void shouldReturnNotification_whenOwnedByUser() throws Exception {
             UUID userId = UUID.randomUUID();
             UUID notificationId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             NotificationResponse response = notificationResponse(notificationId, NotificationStatus.SENT);
 
             given(notificationService.getNotificationForUser(notificationId, userId)).willReturn(response);
 
             mockMvc.perform(get(BASE_URL + "/{id}", notificationId)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(notificationId.toString())))
                     .andExpect(jsonPath("$.status", is("SENT")));
@@ -221,17 +214,17 @@ class NotificationControllerTest {
         }
 
         @Test
-        @DisplayName("should return 404 Not Found when the notification is missing or not owned by the user")
+        @DisplayName("should return 404 Not Found when the notification is missing or not owned by user")
         void shouldReturnNotFound_whenNotificationIsMissingOrNotOwnedByUser() throws Exception {
             UUID userId = UUID.randomUUID();
             UUID notificationId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
 
             given(notificationService.getNotificationForUser(notificationId, userId))
                     .willThrow(new NotificationNotFoundException("Notification not found: " + notificationId));
 
             mockMvc.perform(get(BASE_URL + "/{id}", notificationId)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Notification Not Found")))
                     .andExpect(jsonPath("$.detail", is("Notification not found: " + notificationId)));
@@ -240,20 +233,31 @@ class NotificationControllerTest {
         }
 
         @Test
-        @DisplayName("should return 400 Bad Request when required UUID parameters are invalid or missing")
-        void shouldReturnBadRequest_whenRequiredUuidParametersAreInvalidOrMissing() throws Exception {
-            mockMvc.perform(get(BASE_URL + "/not-a-uuid")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
-                    .andExpect(status().isBadRequest());
+        @DisplayName("User A creates notification; User B gets 404 on read")
+        void userBCannotReadUserANotification_returns404() throws Exception {
+            UUID userB = UUID.randomUUID();
+            UUID notificationId = UUID.randomUUID();
+            String userBToken = jwtFactory.createValidToken(userB);
 
-            then(notificationService).shouldHaveNoInteractions();
+            given(notificationService.getNotificationForUser(notificationId, userB))
+                    .willThrow(new NotificationNotFoundException("Notification not found: " + notificationId));
+
+            mockMvc.perform(get(BASE_URL + "/{id}", notificationId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + userBToken))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.title", is("Notification Not Found")));
+
+            then(notificationService).should().getNotificationForUser(notificationId, userB);
         }
 
         @Test
-        @DisplayName("should return 400 Bad Request when userId is missing")
-        void shouldReturnBadRequest_whenUserIdIsMissing() throws Exception {
-            mockMvc.perform(get(BASE_URL + "/{id}", UUID.randomUUID())
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
+        @DisplayName("should return 400 Bad Request when required UUID parameter is invalid")
+        void shouldReturnBadRequest_whenRequiredUuidParameterIsInvalid() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
+
+            mockMvc.perform(get(BASE_URL + "/not-a-uuid")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isBadRequest());
 
             then(notificationService).shouldHaveNoInteractions();

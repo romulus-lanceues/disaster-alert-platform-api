@@ -58,7 +58,7 @@ public class AuthController {
 
         URI location = ServletUriComponentsBuilder
                 .fromCurrentContextPath()
-                .path("/api/v1/users/" + request.email())
+                .path("/api/v1/users/me")
                 .build()
                 .toUri();
 

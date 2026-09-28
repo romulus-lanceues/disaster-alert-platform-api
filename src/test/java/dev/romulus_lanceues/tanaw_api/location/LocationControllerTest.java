@@ -37,6 +37,7 @@ import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -79,12 +80,11 @@ class LocationControllerTest {
     @MockitoBean
     private UserRepository userRepository;
 
-    private String validToken;
+    private TestJwtFactory jwtFactory;
 
     @BeforeEach
     void setUp() {
-        TestJwtFactory jwtFactory = new TestJwtFactory(jwtProperties, clock);
-        validToken = jwtFactory.createValidToken();
+        jwtFactory = new TestJwtFactory(jwtProperties, clock);
 
         given(userRepository.findAuthState(any(UUID.class)))
                 .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 0L)));
@@ -101,9 +101,9 @@ class LocationControllerTest {
             UUID locationId = UUID.randomUUID();
             UUID geoAreaId = UUID.randomUUID();
             Instant now = Instant.parse("2026-09-18T10:00:00Z");
+            String token = jwtFactory.createValidToken(userId);
 
             LocationRequest request = new LocationRequest(
-                    userId,
                     "Home",
                     "123 Rizal St",
                     "137600000",
@@ -130,11 +130,11 @@ class LocationControllerTest {
                     now
             );
 
-            given(locationService.createLocation(any(LocationRequest.class))).willReturn(response);
+            given(locationService.createLocation(eq(userId), any(LocationRequest.class))).willReturn(response);
 
             mockMvc.perform(post(BASE_URL)
                             .with(csrf())
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -152,14 +152,16 @@ class LocationControllerTest {
                     .andExpect(jsonPath("$.createdAt", is(now.toString())))
                     .andExpect(jsonPath("$.updatedAt", is(now.toString())));
 
-            then(locationService).should().createLocation(request);
+            then(locationService).should().createLocation(userId, request);
         }
 
         @Test
         @DisplayName("should return 400 Bad Request when validation fails")
         void shouldReturn400BadRequest_whenValidationFails() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
+
             LocationRequest invalidRequest = new LocationRequest(
-                    null,
                     "",
                     "x".repeat(256),
                     "",
@@ -169,12 +171,11 @@ class LocationControllerTest {
 
             mockMvc.perform(post(BASE_URL)
                             .with(csrf())
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.title", is("Validation Failed")))
-                    .andExpect(jsonPath("$.errors.userId").exists())
                     .andExpect(jsonPath("$.errors.name").exists())
                     .andExpect(jsonPath("$.errors.address").exists())
                     .andExpect(jsonPath("$.errors.geographicAreaCode").exists())
@@ -188,8 +189,8 @@ class LocationControllerTest {
         @DisplayName("should return 404 Not Found when user does not exist")
         void shouldReturn404NotFound_whenUserDoesNotExist() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             LocationRequest request = new LocationRequest(
-                    userId,
                     "Home",
                     "123 Rizal St",
                     "137600000",
@@ -197,27 +198,27 @@ class LocationControllerTest {
                     120.98
             );
 
-            given(locationService.createLocation(any(LocationRequest.class)))
+            given(locationService.createLocation(eq(userId), any(LocationRequest.class)))
                     .willThrow(new UserNotFoundException("User not found: " + userId));
 
             mockMvc.perform(post(BASE_URL)
                             .with(csrf())
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("User Not Found")))
                     .andExpect(jsonPath("$.detail", is("User not found: " + userId)));
 
-            then(locationService).should().createLocation(request);
+            then(locationService).should().createLocation(userId, request);
         }
 
         @Test
         @DisplayName("should return 404 Not Found when geographic area does not exist")
         void shouldReturn404NotFound_whenGeographicAreaDoesNotExist() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             LocationRequest request = new LocationRequest(
-                    userId,
                     "Home",
                     "123 Rizal St",
                     "999999999",
@@ -225,30 +226,31 @@ class LocationControllerTest {
                     120.98
             );
 
-            given(locationService.createLocation(any(LocationRequest.class)))
+            given(locationService.createLocation(eq(userId), any(LocationRequest.class)))
                     .willThrow(new GeographicAreaNotFoundException("Geographic area not found with PSGC code: 999999999"));
 
             mockMvc.perform(post(BASE_URL)
                             .with(csrf())
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Geographic Area Not Found")))
                     .andExpect(jsonPath("$.detail", is("Geographic area not found with PSGC code: 999999999")));
 
-            then(locationService).should().createLocation(request);
+            then(locationService).should().createLocation(userId, request);
         }
     }
 
     @Nested
-    @DisplayName("getLocationsByUser (GET /api/v1/locations?userId={userId})")
+    @DisplayName("getLocationsByUser (GET /api/v1/locations)")
     class GetLocationsByUser {
 
         @Test
-        @DisplayName("should return 200 OK and list of locations when user has locations")
+        @DisplayName("should return 200 OK and list of locations for authenticated user")
         void shouldReturn200OkAndLocationList_whenLocationsExist() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             UUID locId1 = UUID.randomUUID();
             UUID locId2 = UUID.randomUUID();
             Instant now = Instant.parse("2026-09-18T10:00:00Z");
@@ -286,8 +288,7 @@ class LocationControllerTest {
             given(locationService.getLocationsByUser(userId)).willReturn(List.of(loc1, loc2));
 
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(2)))
                     .andExpect(jsonPath("$[0].id", is(locId1.toString())))
@@ -316,12 +317,12 @@ class LocationControllerTest {
         @DisplayName("should return 200 OK and empty list when user has no locations")
         void shouldReturn200OkAndEmptyList_whenUserHasNoLocations() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
 
             given(locationService.getLocationsByUser(userId)).willReturn(List.of());
 
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(0)));
 
@@ -332,13 +333,13 @@ class LocationControllerTest {
         @DisplayName("should return 404 Not Found when user does not exist")
         void shouldReturn404NotFound_whenUserDoesNotExist() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
 
             given(locationService.getLocationsByUser(userId))
                     .willThrow(new UserNotFoundException("User not found: " + userId));
 
             mockMvc.perform(get(BASE_URL)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("User Not Found")))
                     .andExpect(jsonPath("$.detail", is("User not found: " + userId)));
@@ -348,13 +349,14 @@ class LocationControllerTest {
     }
 
     @Nested
-    @DisplayName("getLocation (GET /api/v1/locations/{id}?userId={userId})")
+    @DisplayName("getLocation (GET /api/v1/locations/{id})")
     class GetLocation {
 
         @Test
-        @DisplayName("should return 200 OK and location details when location exists and belongs to user")
+        @DisplayName("should return 200 OK and location details when location exists and belongs to authenticated user")
         void shouldReturn200OkAndLocationResponse_whenLocationExistsAndOwnedByUser() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             UUID locationId = UUID.randomUUID();
             UUID geoAreaId = UUID.randomUUID();
             Instant now = Instant.parse("2026-09-18T10:00:00Z");
@@ -381,8 +383,7 @@ class LocationControllerTest {
             given(locationService.getLocation(locationId, userId)).willReturn(response);
 
             mockMvc.perform(get(BASE_URL + "/{id}", locationId)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(locationId.toString())))
                     .andExpect(jsonPath("$.userId", is(userId.toString())))
@@ -401,22 +402,42 @@ class LocationControllerTest {
         }
 
         @Test
-        @DisplayName("should return 404 Not Found when location does not exist or does not belong to user")
+        @DisplayName("should return 404 Not Found when location does not exist or does not belong to authenticated user")
         void shouldReturn404NotFound_whenLocationDoesNotExistOrNotOwnedByUser() throws Exception {
             UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId);
             UUID locationId = UUID.randomUUID();
 
             given(locationService.getLocation(locationId, userId))
                     .willThrow(new LocationNotFoundException("Location not found: " + locationId));
 
             mockMvc.perform(get(BASE_URL + "/{id}", locationId)
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken)
-                            .param("userId", userId.toString()))
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title", is("Location Not Found")))
                     .andExpect(jsonPath("$.detail", is("Location not found: " + locationId)));
 
             then(locationService).should().getLocation(locationId, userId);
+        }
+
+        @Test
+        @DisplayName("User A creates data; User B gets 404 on read")
+        void userBCannotReadUserALocation_returns404() throws Exception {
+            UUID userA = UUID.randomUUID();
+            UUID userB = UUID.randomUUID();
+            UUID locationId = UUID.randomUUID();
+
+            String userBToken = jwtFactory.createValidToken(userB);
+
+            given(locationService.getLocation(locationId, userB))
+                    .willThrow(new LocationNotFoundException("Location not found: " + locationId));
+
+            mockMvc.perform(get(BASE_URL + "/{id}", locationId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + userBToken))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.title", is("Location Not Found")));
+
+            then(locationService).should().getLocation(locationId, userB);
         }
     }
 }

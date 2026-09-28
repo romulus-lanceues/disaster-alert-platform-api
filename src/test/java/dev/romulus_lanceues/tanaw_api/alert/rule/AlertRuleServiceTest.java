@@ -105,7 +105,7 @@ class AlertRuleServiceTest {
             Location location = buildLocation(locationId, user);
 
             AlertRuleRequest request = new AlertRuleRequest(
-                    userId, locationId, DisasterType.EARTHQUAKE, 5.0, 50.0, "MODERATE");
+                    locationId, DisasterType.EARTHQUAKE, 5.0, 50.0, "MODERATE");
 
             AlertRule savedRule = buildAlertRule(UUID.randomUUID(), location);
 
@@ -115,7 +115,7 @@ class AlertRuleServiceTest {
                     .willReturn(savedRule);
 
 
-            AlertRuleResponse result = alertRuleService.createAlertRule(request);
+            AlertRuleResponse result = alertRuleService.createAlertRule(userId, request);
 
             assertThat(result).isNotNull();
             assertThat(result.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
@@ -137,7 +137,7 @@ class AlertRuleServiceTest {
             Location location = buildLocation(locationId, user);
 
             AlertRuleRequest request = new AlertRuleRequest(
-                    userId, locationId, DisasterType.TYPHOON, null, null, null);
+                    locationId, DisasterType.TYPHOON, null, null, null);
 
             AlertRule savedRule = AlertRule.builder()
                     .id(UUID.randomUUID())
@@ -152,7 +152,7 @@ class AlertRuleServiceTest {
                     .willReturn(savedRule);
 
 
-            AlertRuleResponse result = alertRuleService.createAlertRule(request);
+            AlertRuleResponse result = alertRuleService.createAlertRule(userId, request);
 
 
             assertThat(result).isNotNull();
@@ -170,12 +170,12 @@ class AlertRuleServiceTest {
             UUID locationId = UUID.randomUUID();
 
             AlertRuleRequest request = new AlertRuleRequest(
-                    userId, locationId, DisasterType.EARTHQUAKE, 5.0, 50.0, "MODERATE");
+                    locationId, DisasterType.EARTHQUAKE, 5.0, 50.0, "MODERATE");
 
             given(locationRepository.findByIdAndUserId(locationId, userId))
                     .willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> alertRuleService.createAlertRule(request))
+            assertThatThrownBy(() -> alertRuleService.createAlertRule(userId, request))
                     .isInstanceOf(LocationNotFoundException.class)
                     .hasMessageContaining(locationId.toString());
 

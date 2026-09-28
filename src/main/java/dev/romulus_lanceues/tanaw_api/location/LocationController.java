@@ -13,12 +13,13 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -36,7 +37,7 @@ public class LocationController {
 
     @Operation(
             summary = "Create a new location",
-            description = "Creates a new location for a user with coordinates and an associated geographic area. Returns the created location details along with a Location header pointing to the new resource."
+            description = "Creates a new location for the authenticated user with coordinates and an associated geographic area. Returns the created location details along with a Location header pointing to the new resource."
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -57,8 +58,11 @@ public class LocationController {
             )
     })
     @PostMapping
-    public ResponseEntity<LocationResponse> createLocation(@Valid @RequestBody LocationRequest request) {
-        LocationResponse response = locationService.createLocation(request);
+    public ResponseEntity<LocationResponse> createLocation(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody LocationRequest request) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        LocationResponse response = locationService.createLocation(userId, request);
 
         URI location = ServletUriComponentsBuilder
                 .fromCurrentRequest()
@@ -71,7 +75,7 @@ public class LocationController {
 
     @Operation(
             summary = "List locations by user",
-            description = "Retrieves all locations belonging to the specified user."
+            description = "Retrieves all locations belonging to the authenticated user."
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -87,8 +91,8 @@ public class LocationController {
     })
     @GetMapping
     public ResponseEntity<List<LocationResponse>> getLocationsByUser(
-            @Parameter(description = "Unique UUID identifier of the user", example = "123e4567-e89b-12d3-a456-426614174000", required = true)
-            @RequestParam UUID userId) {
+            @AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(locationService.getLocationsByUser(userId));
     }
 
@@ -104,16 +108,16 @@ public class LocationController {
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No location found with the given UUID for the specified user",
+                    description = "No location found with the given UUID for the authenticated user",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @GetMapping("/{id}")
     public ResponseEntity<LocationResponse> getLocation(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Unique UUID identifier of the location", example = "123e4567-e89b-12d3-a456-426614174000", required = true)
-            @PathVariable UUID id,
-            @Parameter(description = "Unique UUID identifier of the user who owns the location", example = "123e4567-e89b-12d3-a456-426614174000", required = true)
-            @RequestParam UUID userId) {
+            @PathVariable UUID id) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(locationService.getLocation(id, userId));
     }
 }

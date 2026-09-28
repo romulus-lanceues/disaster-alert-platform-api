@@ -161,7 +161,7 @@ class SecurityFilterChainTest {
                     .willReturn(new dev.romulus_lanceues.tanaw_api.user.UserResponse(
                             userId, "alice@example.com", UserStatus.ACTIVE, clock.instant(), clock.instant()));
 
-            mockMvc.perform(get("/api/v1/users/" + userId)
+            mockMvc.perform(get("/api/v1/users/me")
                             .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id", is(userId.toString())))

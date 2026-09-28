@@ -15,6 +15,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,7 +40,7 @@ public class NotificationController {
 
     @Operation(
             summary = "List notifications",
-            description = "Retrieves a newest-first page of notifications owned by the supplied user. Results can optionally be filtered by delivery status."
+            description = "Retrieves a newest-first page of notifications owned by the authenticated user. Results can optionally be filtered by delivery status."
     )
     @ApiResponses({
             @ApiResponse(
@@ -48,18 +50,13 @@ public class NotificationController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "A required parameter is missing or invalid, or the page number or size is outside the allowed range.",
+                    description = "A required parameter is invalid, or the page number or size is outside the allowed range.",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @GetMapping
     public Page<NotificationResponse> getNotifications(
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the notifications",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Optional delivery status used to filter notifications",
                     example = "SENT"
@@ -76,13 +73,14 @@ public class NotificationController {
             )
             @RequestParam(defaultValue = "10") @Min(1) @Max(DEFAULT_PAGE_SIZE) int size) {
 
+        UUID userId = UUID.fromString(jwt.getSubject());
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         return notificationService.getNotificationsForUser(userId, status, pageable);
     }
 
     @Operation(
             summary = "Get a notification",
-            description = "Retrieves one notification after verifying that it belongs to the supplied user."
+            description = "Retrieves one notification after verifying that it belongs to the authenticated user."
     )
     @ApiResponses({
             @ApiResponse(
@@ -92,29 +90,25 @@ public class NotificationController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "The notification ID or user ID is missing or is not a valid UUID.",
+                    description = "The notification ID is missing or is not a valid UUID.",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No notification was found for the supplied notification and user UUIDs.",
+                    description = "No notification was found for the supplied notification ID and authenticated user.",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @GetMapping("/{id}")
     public NotificationResponse getNotification(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Unique UUID identifier of the notification",
                     example = "123e4567-e89b-12d3-a456-426614174001",
                     required = true
             )
-            @PathVariable UUID id,
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the notification",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId) {
+            @PathVariable UUID id) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return notificationService.getNotificationForUser(id, userId);
     }
 }

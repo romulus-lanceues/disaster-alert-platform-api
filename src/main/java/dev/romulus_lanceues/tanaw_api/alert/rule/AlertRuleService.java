@@ -21,11 +21,11 @@ public class AlertRuleService {
     private final LocationRepository locationRepository;
 
     @Transactional
-    public AlertRuleResponse createAlertRule(AlertRuleRequest request) {
+    public AlertRuleResponse createAlertRule(UUID userId, AlertRuleRequest request) {
         log.info("Creating alert rule for location {} with disaster type {}",
                 request.locationId(), request.disasterType());
 
-        Location location = locationRepository.findByIdAndUserId(request.locationId(), request.userId())
+        Location location = locationRepository.findByIdAndUserId(request.locationId(), userId)
                 .orElseThrow(() -> new LocationNotFoundException(
                         "Location not found: " + request.locationId()));
 

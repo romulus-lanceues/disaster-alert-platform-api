@@ -13,6 +13,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -38,7 +40,7 @@ public class AlertRuleController {
 
     @Operation(
             summary = "Create an alert rule",
-            description = "Creates an enabled alert rule for a location owned by the supplied user."
+            description = "Creates an enabled alert rule for a location owned by the authenticated user."
     )
     @ApiResponses({
             @ApiResponse(
@@ -58,13 +60,16 @@ public class AlertRuleController {
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "The referenced location was not found for the supplied user",
+                    description = "The referenced location was not found for the authenticated user",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @PostMapping
-    public ResponseEntity<AlertRuleResponse> createAlertRule(@Valid @RequestBody AlertRuleRequest request) {
-        AlertRuleResponse response = alertRuleService.createAlertRule(request);
+    public ResponseEntity<AlertRuleResponse> createAlertRule(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AlertRuleRequest request) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        AlertRuleResponse response = alertRuleService.createAlertRule(userId, request);
 
         URI location = ServletUriComponentsBuilder
                 .fromCurrentRequest()
@@ -77,7 +82,7 @@ public class AlertRuleController {
 
     @Operation(
             summary = "List alert rules",
-            description = "Retrieves all alert rules owned by a user, optionally filtered to a location owned by that user."
+            description = "Retrieves all alert rules owned by the authenticated user, optionally filtered to a location owned by that user."
     )
     @ApiResponses({
             @ApiResponse(
@@ -87,24 +92,20 @@ public class AlertRuleController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "The userId or locationId query parameter is missing or is not a valid UUID",
+                    description = "The locationId query parameter is not a valid UUID",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @GetMapping
     public ResponseEntity<List<AlertRuleResponse>> getAlertRules(
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the alert rules",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Optional unique UUID identifier of a location owned by the user",
                     example = "123e4567-e89b-12d3-a456-426614174001"
             )
             @RequestParam(required = false) UUID locationId) {
 
+        UUID userId = UUID.fromString(jwt.getSubject());
         List<AlertRuleResponse> rules = (locationId != null)
                 ? alertRuleService.getAlertRulesByLocation(locationId, userId)
                 : alertRuleService.getAlertRulesByUser(userId);
@@ -114,7 +115,7 @@ public class AlertRuleController {
 
     @Operation(
             summary = "Get an alert rule",
-            description = "Retrieves a specific alert rule after verifying that it belongs to the supplied user."
+            description = "Retrieves a specific alert rule after verifying that it belongs to the authenticated user."
     )
     @ApiResponses({
             @ApiResponse(
@@ -124,29 +125,25 @@ public class AlertRuleController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "The path or query parameter is not a valid UUID",
+                    description = "The path parameter is not a valid UUID",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No alert rule was found for the supplied alert rule and user UUIDs",
+                    description = "No alert rule was found for the supplied alert rule ID and authenticated user",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @GetMapping("/{id}")
     public ResponseEntity<AlertRuleResponse> getAlertRule(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Unique UUID identifier of the alert rule",
                     example = "123e4567-e89b-12d3-a456-426614174002",
                     required = true
             )
-            @PathVariable UUID id,
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the alert rule",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId) {
+            @PathVariable UUID id) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(alertRuleService.getAlertRule(id, userId));
     }
 
@@ -167,26 +164,22 @@ public class AlertRuleController {
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No alert rule was found for the supplied alert rule and user UUIDs",
+                    description = "No alert rule was found for the supplied alert rule ID and authenticated user",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @PatchMapping("/{id}/thresholds")
     public ResponseEntity<AlertRuleResponse> updateThresholds(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Unique UUID identifier of the alert rule",
                     example = "123e4567-e89b-12d3-a456-426614174002",
                     required = true
             )
             @PathVariable UUID id,
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the alert rule",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId,
             @Valid @RequestBody AlertRuleThresholdRequest request) {
 
+        UUID userId = UUID.fromString(jwt.getSubject());
         AlertRuleResponse response = alertRuleService.updateThresholds(
                 id, userId,
                 request.minimumMagnitude(), request.radiusKm(), request.minimumSeverity());
@@ -196,7 +189,7 @@ public class AlertRuleController {
 
     @Operation(
             summary = "Enable an alert rule",
-            description = "Enables an alert rule after verifying that it belongs to the supplied user."
+            description = "Enables an alert rule after verifying that it belongs to the authenticated user."
     )
     @ApiResponses({
             @ApiResponse(
@@ -206,35 +199,31 @@ public class AlertRuleController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "The path or query parameter is not a valid UUID",
+                    description = "The path parameter is not a valid UUID",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No alert rule was found for the supplied alert rule and user UUIDs",
+                    description = "No alert rule was found for the supplied alert rule ID and authenticated user",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @PatchMapping("/{id}/enable")
     public ResponseEntity<AlertRuleResponse> enableAlertRule(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Unique UUID identifier of the alert rule",
                     example = "123e4567-e89b-12d3-a456-426614174002",
                     required = true
             )
-            @PathVariable UUID id,
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the alert rule",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId) {
+            @PathVariable UUID id) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(alertRuleService.enableAlertRule(id, userId));
     }
 
     @Operation(
             summary = "Disable an alert rule",
-            description = "Disables an alert rule after verifying that it belongs to the supplied user."
+            description = "Disables an alert rule after verifying that it belongs to the authenticated user."
     )
     @ApiResponses({
             @ApiResponse(
@@ -244,63 +233,55 @@ public class AlertRuleController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "The path or query parameter is not a valid UUID",
+                    description = "The path parameter is not a valid UUID",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No alert rule was found for the supplied alert rule and user UUIDs",
+                    description = "No alert rule was found for the supplied alert rule ID and authenticated user",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @PatchMapping("/{id}/disable")
     public ResponseEntity<AlertRuleResponse> disableAlertRule(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Unique UUID identifier of the alert rule",
                     example = "123e4567-e89b-12d3-a456-426614174002",
                     required = true
             )
-            @PathVariable UUID id,
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the alert rule",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId) {
+            @PathVariable UUID id) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(alertRuleService.disableAlertRule(id, userId));
     }
 
     @Operation(
             summary = "Delete an alert rule",
-            description = "Deletes an alert rule after verifying that it belongs to the supplied user."
+            description = "Deletes an alert rule after verifying that it belongs to the authenticated user."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "Alert rule deleted successfully"),
             @ApiResponse(
                     responseCode = "400",
-                    description = "The path or query parameter is not a valid UUID",
+                    description = "The path parameter is not a valid UUID",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No alert rule was found for the supplied alert rule and user UUIDs",
+                    description = "No alert rule was found for the supplied alert rule ID and authenticated user",
                     content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class))
             )
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteAlertRule(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                     description = "Unique UUID identifier of the alert rule",
                     example = "123e4567-e89b-12d3-a456-426614174002",
                     required = true
             )
-            @PathVariable UUID id,
-            @Parameter(
-                    description = "Unique UUID identifier of the user who owns the alert rule",
-                    example = "123e4567-e89b-12d3-a456-426614174000",
-                    required = true
-            )
-            @RequestParam UUID userId) {
+            @PathVariable UUID id) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         alertRuleService.deleteAlertRule(id, userId);
         return ResponseEntity.noContent().build();
     }

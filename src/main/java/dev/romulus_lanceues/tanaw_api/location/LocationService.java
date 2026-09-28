@@ -26,11 +26,11 @@ public class LocationService {
     private final GeoPointFactory geoPointFactory;
 
     @Transactional
-    public LocationResponse createLocation(LocationRequest request) {
-        log.info("Creating location '{}' for user {}", request.name(), request.userId());
+    public LocationResponse createLocation(UUID userId, LocationRequest request) {
+        log.info("Creating location '{}' for user {}", request.name(), userId);
 
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new UserNotFoundException("User not found: " + request.userId()));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
 
         GeographicArea area = geographicAreaRepository.findByPsgcCode(request.geographicAreaCode())
                 .orElseThrow(() -> new GeographicAreaNotFoundException(
