@@ -150,6 +150,42 @@ class SecurityFilterChainTest {
         }
 
         @Test
+        @DisplayName("token with outdated authentication version returns 401 application/problem+json")
+        void versionMismatchToken_returns401ProblemDetail() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String outdatedToken = jwtFactory.createValidToken(userId, 0L);
+
+            given(userRepository.findAuthState(userId))
+                    .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 1L)));
+
+            mockMvc.perform(get("/api/v1/users/me")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + outdatedToken))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+
+        @Test
+        @DisplayName("token for disabled account returns 401 application/problem+json")
+        void disabledAccountToken_returns401ProblemDetail() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String token = jwtFactory.createValidToken(userId, 1L);
+
+            given(userRepository.findAuthState(userId))
+                    .willReturn(Optional.of(new UserAuthState(UserStatus.DISABLED, 1L)));
+
+            mockMvc.perform(get("/api/v1/users/me")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+
+        @Test
         @DisplayName("valid token is authenticated and allowed through to controller")
         void validToken_isAllowedThrough() throws Exception {
             UUID userId = UUID.randomUUID();
