@@ -262,4 +262,29 @@ class SecurityFilterChainTest {
                     .andExpect(status().isNoContent());
         }
     }
+
+    @Nested
+    @DisplayName("Swagger and OpenAPI restriction in non-dev profile")
+    class SwaggerRestriction {
+
+        @Test
+        @DisplayName("GET /swagger-ui/index.html is denied when non-dev")
+        void swaggerUi_isDenied() throws Exception {
+            mockMvc.perform(get("/swagger-ui/index.html"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+
+        @Test
+        @DisplayName("GET /v3/api-docs is denied when non-dev")
+        void apiDocs_isDenied() throws Exception {
+            mockMvc.perform(get("/v3/api-docs"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+    }
 }

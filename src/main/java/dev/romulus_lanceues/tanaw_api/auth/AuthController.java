@@ -34,7 +34,8 @@ public class AuthController {
 
     @Operation(
             summary = "Register a new user account",
-            description = "Validates registration details, normalizes email, encodes password, activates the account, and returns 201 Created with no token."
+            description = "Validates registration details, normalizes email, encodes password, activates the account, and returns 201 Created with no token.",
+            security = {}
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -67,7 +68,8 @@ public class AuthController {
 
     @Operation(
             summary = "Authenticate user",
-            description = "Authenticates user credentials, sets an HttpOnly Secure refresh token cookie, and returns a short-lived JWT access token."
+            description = "Authenticates user credentials, sets an HttpOnly Secure refresh token cookie, and returns a short-lived JWT access token.",
+            security = {}
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -99,7 +101,8 @@ public class AuthController {
 
     @Operation(
             summary = "Refresh access token",
-            description = "Rotates the refresh token session using the HttpOnly cookie, sets a new refresh token cookie, and returns a new access token."
+            description = "Rotates the refresh token session using the HttpOnly cookie, sets a new refresh token cookie, and returns a new access token.",
+            security = {}
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -127,7 +130,8 @@ public class AuthController {
 
     @Operation(
             summary = "Logout user",
-            description = "Revokes the active refresh token session if present, clears the refresh token cookie, and returns 204 No Content even if cookie is missing or invalid."
+            description = "Revokes the active refresh token session if present, clears the refresh token cookie, and returns 204 No Content even if cookie is missing or invalid.",
+            security = {}
     )
     @ApiResponses(value = {
             @ApiResponse(
