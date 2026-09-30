@@ -269,6 +269,61 @@ class RefreshTokenSessionServiceTest {
 
             verifyNoInteractions(refreshTokenSessionRepository);
         }
+
+        @Test
+        @DisplayName("should make the newest replacement token stop working after reuse revokes the family")
+        void shouldMakeNewestTokenStopWorking_afterReuseRevokesFamily() {
+            // Set up a valid token A that was already rotated to token B
+            String rawTokenA = "original-token-a";
+            String tokenHashA = refreshTokenSessionService.hashToken(rawTokenA);
+            String rawTokenB = "replacement-token-b";
+            String tokenHashB = refreshTokenSessionService.hashToken(rawTokenB);
+            UUID familyId = UUID.randomUUID();
+
+            // Token A was already rotated (has revokedAt set)
+            RefreshTokenSession sessionA = RefreshTokenSession.builder()
+                    .id(UUID.randomUUID())
+                    .user(testUser)
+                    .familyId(familyId)
+                    .tokenHash(tokenHashA)
+                    .createdAt(now.minus(Duration.ofDays(2)))
+                    .expiresAt(now.plus(Duration.ofDays(28)))
+                    .revokedAt(now.minus(Duration.ofDays(1)))
+                    .build();
+
+            // Token B is the newest — initially active, now revoked by revokeFamily
+            RefreshTokenSession sessionB = RefreshTokenSession.builder()
+                    .id(UUID.randomUUID())
+                    .user(testUser)
+                    .familyId(familyId)
+                    .tokenHash(tokenHashB)
+                    .createdAt(now.minus(Duration.ofDays(1)))
+                    .expiresAt(now.plus(Duration.ofDays(29)))
+                    .revokedAt(now) // family revocation already applied
+                    .build();
+
+            //Replaying token A triggers family revocation
+            when(refreshTokenSessionRepository.findByTokenHashForUpdate(tokenHashA))
+                    .thenReturn(Optional.of(sessionA));
+
+            assertThatThrownBy(() -> refreshTokenSessionService.rotate(rawTokenA))
+                    .isInstanceOf(InvalidRefreshTokenException.class)
+                    .hasMessageContaining("already been revoked");
+
+            verify(refreshTokenSessionRepository).revokeFamily(eq(familyId), eq(now));
+
+            //Token B (the newest) is also found revoked — stops working
+            when(refreshTokenSessionRepository.findByTokenHashForUpdate(tokenHashB))
+                    .thenReturn(Optional.of(sessionB));
+
+            assertThatThrownBy(() -> refreshTokenSessionService.rotate(rawTokenB))
+                    .isInstanceOf(InvalidRefreshTokenException.class)
+                    .hasMessageContaining("already been revoked");
+
+            // Verify revokeFamily is called a second time (idempotent protection)
+            verify(refreshTokenSessionRepository, times(2)).revokeFamily(eq(familyId), eq(now));
+            verify(refreshTokenSessionRepository, never()).save(any());
+        }
     }
 
     @Nested

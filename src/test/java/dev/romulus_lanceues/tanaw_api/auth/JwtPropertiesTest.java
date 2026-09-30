@@ -94,6 +94,19 @@ public class JwtPropertiesTest {
     }
 
     @Test
+    void startupFailsWhenSecretPropertyIsMissing() {
+        contextRunner.withPropertyValues(
+                "security.jwt.issuer=test-issuer",
+                "security.jwt.audience=test-audience",
+                "security.jwt.access-token-duration=PT10M",
+                "security.jwt.refresh-token-duration=P30D"
+                // secret is intentionally omitted
+        ).run(context -> {
+            assertThat(context).hasFailed();
+        });
+    }
+
+    @Test
     void startupFailsWhenAccessTokenDurationIsZero() {
         contextWithSecret(secretOfLength(32))
                 .withPropertyValues(

@@ -236,6 +236,27 @@ class SecurityFilterChainTest {
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk());
         }
+
+        @Test
+        @DisplayName("POST /api/v1/auth/refresh without CSRF header returns 403 application/problem+json")
+        void refreshWithoutCsrf_returns403ProblemDetail() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/refresh")
+                            .cookie(new jakarta.servlet.http.Cookie("refresh_token", "some-token")))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(403)))
+                    .andExpect(jsonPath("$.title", is("Forbidden")));
+        }
+
+        @Test
+        @DisplayName("POST /api/v1/auth/logout without CSRF header returns 403 application/problem+json")
+        void logoutWithoutCsrf_returns403ProblemDetail() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/logout"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(403)))
+                    .andExpect(jsonPath("$.title", is("Forbidden")));
+        }
     }
 
     @Nested
