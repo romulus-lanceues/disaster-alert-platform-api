@@ -147,6 +147,12 @@
 			<version>3.1.0</version>
 		</dependency>
 
+		<!--OAuth2 resource dependency for JWT validation-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+		</dependency>
+
 	</dependencies>
 
 	<build>
@@ -154,6 +160,19 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+
+			<plugin>
+				<groupId>org.flywaydb</groupId>
+				<artifactId>flyway-maven-plugin</artifactId>
+				<configuration>
+					<!--suppress UnresolvedMavenProperty -->
+					<url> jdbc:postgresql://localhost:${DB_PORT}/${DB_NAME}</url>
+					<!--suppress UnresolvedMavenProperty -->
+					<user>${DB_USER}</user>
+					<!--suppress UnresolvedMavenProperty -->
+					<password>${DB_PASSWORD}</password>
+				</configuration>
 			</plugin>
 
 			<plugin>

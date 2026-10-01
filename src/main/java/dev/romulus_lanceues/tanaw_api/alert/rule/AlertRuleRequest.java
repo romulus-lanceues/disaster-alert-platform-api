@@ -9,13 +9,6 @@ import java.util.UUID;
 
 @Schema(description = "Payload required to create an alert rule")
 public record AlertRuleRequest(
-        @Schema(
-                description = "Unique UUID identifier of the user who owns the location",
-                example = "123e4567-e89b-12d3-a456-426614174000",
-                requiredMode = Schema.RequiredMode.REQUIRED
-        )
-        @NotNull(message = "User ID is required")
-        UUID userId,
 
         @Schema(
                 description = "Unique UUID identifier of the location to monitor",

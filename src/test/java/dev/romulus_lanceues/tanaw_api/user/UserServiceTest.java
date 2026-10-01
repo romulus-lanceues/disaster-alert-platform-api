@@ -1,5 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
+import dev.romulus_lanceues.tanaw_api.auth.RefreshTokenSessionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,9 @@ class UserServiceTest {
 
     @Mock
     private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private RefreshTokenSessionService refreshTokenSessionService;
 
     @InjectMocks
     private UserService userService;
@@ -71,6 +75,7 @@ class UserServiceTest {
             assertThat(createdUser.getEmail()).isEqualTo(savedUser.getEmail());
             assertThat(createdUser.getPasswordHash()).isEqualTo(savedUser.getPasswordHash());
             assertThat(createdUser.getStatus()).isEqualTo(savedUser.getStatus());
+            assertThat(createdUser.getAuthenticationVersion()).isEqualTo(0L);
         }
 
         @Test
@@ -177,7 +182,7 @@ class UserServiceTest {
     class ChangePassword {
 
         @Test
-        @DisplayName("should update password when user exists, is active, and current password is correct")
+        @DisplayName("should update password, increment authenticationVersion, and revoke all sessions when current password is correct")
         void shouldUpdatePassword_whenCurrentPasswordIsCorrect() {
 
             UUID userId = UUID.randomUUID();
@@ -186,6 +191,7 @@ class UserServiceTest {
                     .email("alice@example.com")
                     .passwordHash("old_encoded_hash")
                     .status(UserStatus.ACTIVE)
+                    .authenticationVersion(0L)
                     .build();
 
             ChangePasswordRequest request = new ChangePasswordRequest("OldPassword1!", "NewPassword2!");
@@ -199,7 +205,9 @@ class UserServiceTest {
             userService.changePassword(userId, request);
 
             assertThat(user.getPasswordHash()).isEqualTo(newEncodedPassword);
+            assertThat(user.getAuthenticationVersion()).isEqualTo(1L);
             then(userRepository).should().save(user);
+            then(refreshTokenSessionService).should().revokeAllForUser(userId);
         }
 
         @Test
@@ -217,6 +225,7 @@ class UserServiceTest {
 
             then(passwordEncoder).should(never()).matches(anyString(), anyString());
             then(userRepository).should(never()).save(any(User.class));
+            then(refreshTokenSessionService).shouldHaveNoInteractions();
         }
 
         @Test
@@ -229,6 +238,7 @@ class UserServiceTest {
                     .email("alice@example.com")
                     .passwordHash("old_encoded_hash")
                     .status(UserStatus.DISABLED)
+                    .authenticationVersion(0L)
                     .build();
 
             ChangePasswordRequest request = new ChangePasswordRequest("OldPassword1!", "NewPassword2!");
@@ -241,6 +251,7 @@ class UserServiceTest {
 
             then(passwordEncoder).should(never()).matches(anyString(), anyString());
             then(userRepository).should(never()).save(any(User.class));
+            then(refreshTokenSessionService).shouldHaveNoInteractions();
         }
 
         @Test
@@ -253,6 +264,7 @@ class UserServiceTest {
                     .email("alice@example.com")
                     .passwordHash("encoded_hash_abc")
                     .status(UserStatus.ACTIVE)
+                    .authenticationVersion(0L)
                     .build();
 
             ChangePasswordRequest request = new ChangePasswordRequest("WrongPassword!", "NewPass1!");
@@ -266,6 +278,7 @@ class UserServiceTest {
 
             then(passwordEncoder).should(never()).encode(anyString());
             then(userRepository).should(never()).save(any(User.class));
+            then(refreshTokenSessionService).shouldHaveNoInteractions();
         }
 
         @Test
@@ -278,6 +291,7 @@ class UserServiceTest {
                     .email("alice@example.com")
                     .passwordHash("encoded_hash_abc")
                     .status(UserStatus.ACTIVE)
+                    .authenticationVersion(0L)
                     .build();
 
             ChangePasswordRequest request = new ChangePasswordRequest("SamePassword1!", "SamePassword1!");
@@ -292,6 +306,7 @@ class UserServiceTest {
 
             then(passwordEncoder).should(never()).encode(anyString());
             then(userRepository).should(never()).save(any(User.class));
+            then(refreshTokenSessionService).shouldHaveNoInteractions();
         }
     }
 
@@ -300,7 +315,7 @@ class UserServiceTest {
     class DisableUser {
 
         @Test
-        @DisplayName("should disable user when user exists")
+        @DisplayName("should disable user, increment authenticationVersion, and revoke all sessions when user exists")
         void shouldDisableUser_whenUserExists() {
 
             UUID userId = UUID.randomUUID();
@@ -309,6 +324,7 @@ class UserServiceTest {
                     .email("alice@example.com")
                     .passwordHash("hash_123")
                     .status(UserStatus.ACTIVE)
+                    .authenticationVersion(0L)
                     .build();
 
             given(userRepository.findById(userId)).willReturn(Optional.of(user));
@@ -316,7 +332,9 @@ class UserServiceTest {
             userService.disableUser(userId);
 
             assertThat(user.getStatus()).isEqualTo(UserStatus.DISABLED);
+            assertThat(user.getAuthenticationVersion()).isEqualTo(1L);
             then(userRepository).should().save(user);
+            then(refreshTokenSessionService).should().revokeAllForUser(userId);
         }
 
         @Test
@@ -332,6 +350,7 @@ class UserServiceTest {
                     .hasMessageContaining(userId.toString());
 
             then(userRepository).should(never()).save(any(User.class));
+            then(refreshTokenSessionService).shouldHaveNoInteractions();
         }
     }
 }

@@ -1,5 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
+import dev.romulus_lanceues.tanaw_api.auth.RefreshTokenSessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,6 +17,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenSessionService refreshTokenSessionService;
 
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
@@ -66,9 +68,11 @@ public class UserService {
         }
 
         user.updatePassword(passwordEncoder.encode(request.newPassword()));
+        user.incrementAuthenticationVersion();
         userRepository.save(user);
+        refreshTokenSessionService.revokeAllForUser(user.getId());
 
-        log.info("Password changed: userId={}", user.getId());
+        log.info("Password changed and sessions invalidated: userId={}", user.getId());
     }
 
     @Transactional
@@ -77,8 +81,10 @@ public class UserService {
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
 
         user.updateStatus(UserStatus.DISABLED);
+        user.incrementAuthenticationVersion();
         userRepository.save(user);
+        refreshTokenSessionService.revokeAllForUser(user.getId());
 
-        log.info("User disabled: userId={}", user.getId());
+        log.info("User disabled and sessions invalidated: userId={}", user.getId());
     }
 }

@@ -44,6 +44,10 @@ public class User {
         @Column(nullable = false, length = 30)
         private UserStatus status;
 
+        @Builder.Default
+        @Column(name = "authentication_version", nullable = false)
+        private Long authenticationVersion = 0L;
+
         @CreatedDate
         @Column(name = "created_at", nullable = false, updatable = false)
         private Instant createdAt;
@@ -58,5 +62,9 @@ public class User {
         
         public void updatePassword(String passwordHash) {
                 this.passwordHash = passwordHash;
+        }
+
+        public void incrementAuthenticationVersion() {
+                this.authenticationVersion++;
         }
 }

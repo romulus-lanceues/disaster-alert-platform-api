@@ -3,6 +3,8 @@ package dev.romulus_lanceues.tanaw_api.shared.exception;
 import dev.romulus_lanceues.tanaw_api.alert.AlertAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.alert.AlertNotFoundException;
 import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRuleNotFoundException;
+import dev.romulus_lanceues.tanaw_api.auth.InvalidCredentialsException;
+import dev.romulus_lanceues.tanaw_api.auth.InvalidRefreshTokenException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
@@ -18,6 +20,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -200,7 +203,50 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
         return problem;
     }
-    
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ProblemDetail handleException(InvalidRefreshTokenException ex) {
+        log.warn("Invalid refresh token attempt: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Invalid Refresh Token");
+
+        return problem;
+    }
+
+    @ExceptionHandler(BadCredentialsException.class)
+    public ProblemDetail handleException(BadCredentialsException ex) {
+        log.warn("Authentication failed: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                "Invalid email or password"
+        );
+
+        problem.setTitle("Unauthorized");
+
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ProblemDetail handleException(InvalidCredentialsException ex) {
+        log.warn("Invalid credentials attempt: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                "Invalid email or password"
+        );
+
+        problem.setTitle("Unauthorized");
+
+        return problem;
+    }
+
+
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
             MethodArgumentNotValidException ex,

@@ -7,17 +7,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-import java.util.UUID;
 
 @Schema(description = "Payload required to create a new location")
 public record LocationRequest(
-        @Schema(
-                description = "Unique UUID identifier of the user who owns this location",
-                example = "123e4567-e89b-12d3-a456-426614174000",
-                requiredMode = Schema.RequiredMode.REQUIRED
-        )
-        @NotNull(message = "User ID is required")
-        UUID userId,
 
         @Schema(
                 description = "User-defined name or label for the location (maximum 100 characters)",

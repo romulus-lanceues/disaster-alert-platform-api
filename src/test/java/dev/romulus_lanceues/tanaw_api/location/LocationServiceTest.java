@@ -103,7 +103,7 @@ class LocationServiceTest {
             Point point = buildPoint();
 
             LocationRequest request = new LocationRequest(
-                    userId, "Home", "123 Rizal St", "137600000", 14.60, 120.98);
+                    "Home", "123 Rizal St", "137600000", 14.60, 120.98);
 
             Location savedLocation = buildLocation(UUID.randomUUID(), user, area);
 
@@ -112,7 +112,7 @@ class LocationServiceTest {
             given(geoPointFactory.create(14.60, 120.98)).willReturn(point);
             given(locationRepository.save(any(Location.class))).willReturn(savedLocation);
 
-            LocationResponse result = locationService.createLocation(request);
+            LocationResponse result = locationService.createLocation(userId, request);
 
             assertThat(result).isNotNull();
             assertThat(result.name()).isEqualTo("Home");
@@ -126,11 +126,11 @@ class LocationServiceTest {
 
             UUID userId = UUID.randomUUID();
             LocationRequest request = new LocationRequest(
-                    userId, "Home", "123 Rizal St", "137600000", 14.60, 120.98);
+                    "Home", "123 Rizal St", "137600000", 14.60, 120.98);
 
             given(userRepository.findById(userId)).willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> locationService.createLocation(request))
+            assertThatThrownBy(() -> locationService.createLocation(userId, request))
                     .isInstanceOf(UserNotFoundException.class)
                     .hasMessageContaining(userId.toString());
 
@@ -144,12 +144,12 @@ class LocationServiceTest {
             UUID userId = UUID.randomUUID();
             User user = buildUser(userId);
             LocationRequest request = new LocationRequest(
-                    userId, "Home", "123 Rizal St", "INVALID_CODE", 14.60, 120.98);
+                    "Home", "123 Rizal St", "INVALID_CODE", 14.60, 120.98);
 
             given(userRepository.findById(userId)).willReturn(Optional.of(user));
             given(geographicAreaRepository.findByPsgcCode("INVALID_CODE")).willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> locationService.createLocation(request))
+            assertThatThrownBy(() -> locationService.createLocation(userId, request))
                     .isInstanceOf(GeographicAreaNotFoundException.class)
                     .hasMessageContaining("INVALID_CODE");
 
