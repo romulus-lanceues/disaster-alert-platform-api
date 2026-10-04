@@ -10,9 +10,9 @@ import java.util.regex.Pattern;
 
 public class PsgcExcelReader {
 
-    public record PscgcRow(int excelRow, String code, String name, AreaType areaType){}
+    public record PsgcRow(int excelRow, String code, String name, AreaType areaType){}
 
-    public record Result(List<PscgcRow> rows, int skippedNonData, List<String> errors){
+    public record Result(List<PsgcRow> rows, int skippedNonData, List<String> errors){
         public boolean hasErrors(){
             return !errors.isEmpty();
         }
@@ -44,7 +44,7 @@ public class PsgcExcelReader {
 
             Header header = findHeader(sheet);
 
-            List<PscgcRow> rows = new ArrayList<>();
+            List<PsgcRow> rows = new ArrayList<>();
             List<String> errors = new ArrayList<>();
             Map<String, Integer> seen = new HashMap<>();
             int skippedNonData = 0;
@@ -105,7 +105,7 @@ public class PsgcExcelReader {
                     continue;
                 }
 
-                rows.add(new PscgcRow(excelRow, code, name, areaType));
+                rows.add(new PsgcRow(excelRow, code, name, areaType));
             }
 
             return new Result(rows, skippedNonData, errors);
