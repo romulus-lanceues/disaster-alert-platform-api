@@ -58,7 +58,7 @@ class LocationRepositoryTest {
                 .build();
 
         geographicArea = GeographicArea.builder()
-                .psgcCode("137600000")
+                .psgcCode("1376000000")
                 .name("City of Manila")
                 .type(GeographicAreaType.MUNICIPALITY)
                 .active(true)
@@ -258,7 +258,7 @@ class LocationRepositoryTest {
         @DisplayName("should find locations belonging to specified geographic area")
         void shouldFindLocationsByGeographicAreaId() {
             GeographicArea otherArea = GeographicArea.builder()
-                    .psgcCode("137400000")
+                    .psgcCode("1374000000")
                     .name("Quezon City")
                     .type(GeographicAreaType.MUNICIPALITY)
                     .active(true)
@@ -285,7 +285,7 @@ class LocationRepositoryTest {
         @DisplayName("should return empty list when no locations exist in geographic area")
         void shouldReturnEmptyListWhenNoLocationsInGeographicArea() {
             GeographicArea emptyArea = GeographicArea.builder()
-                    .psgcCode("137500000")
+                    .psgcCode("1375000000")
                     .name("Pasig City")
                     .type(GeographicAreaType.MUNICIPALITY)
                     .active(true)
