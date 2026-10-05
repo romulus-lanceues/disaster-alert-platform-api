@@ -68,7 +68,7 @@ public class NotificationRepositoryTest {
     @BeforeEach
     void setUp() {
         primaryUser = persistUser("user1@example.com");
-        geographicArea = persistGeographicArea("137600000", "City of Manila");
+        geographicArea = persistGeographicArea("1376000000", "City of Manila");
         primaryLocation = persistLocation(primaryUser, "Home", 14.5995, 120.9842);
         primaryRule = persistAlertRule(primaryLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
         primaryDisasterEvent = persistDisasterEvent("USGS", "usgs-event-001", DisasterType.EARTHQUAKE, 6.2, 14.6000, 120.9850);

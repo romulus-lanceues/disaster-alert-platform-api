@@ -56,7 +56,7 @@ public class AlertRuleRepositoryTest {
     @BeforeEach
     void setup(){
         primaryUser = persistUser("alice@example.com", "hash_alice_123");
-        primaryGeographicArea = persistGeographicArea("137600000","City of Manila", GeographicAreaType.MUNICIPALITY);
+        primaryGeographicArea = persistGeographicArea("1376000000","City of Manila", GeographicAreaType.MUNICIPALITY);
         primaryLocation = persistLocation(primaryUser,"House", "123 Main St.",14.5500, 121.0300, primaryGeographicArea);
     }
 
@@ -165,7 +165,7 @@ public class AlertRuleRepositoryTest {
         @DisplayName("should find all alert rules with the same location id")
         void shouldFindAllAlertRuleByLocationId(){
 
-            GeographicArea secondArea = persistGeographicArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY);
+            GeographicArea secondArea = persistGeographicArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY);
             Location secondLocation = persistLocation(primaryUser, "QC House", "Balete Drive", 15.001, 12.0021, secondArea);
 
             persistAlertRule(primaryLocation, DisasterType.EARTHQUAKE, 5.5, 4.5);
@@ -212,7 +212,7 @@ public class AlertRuleRepositoryTest {
         @DisplayName("should find all alert rules with the same location user id")
         void shouldFindAllAlertRuleByLocationUserId(){
             User secondUser = persistUser("bob@example.com", "hash_bob_456");
-            GeographicArea secondArea = persistGeographicArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY);
+            GeographicArea secondArea = persistGeographicArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY);
             Location secondLocation = persistLocation(secondUser, "QC House", "Balete Drive", 15.001, 12.0021, secondArea);
 
 
@@ -351,7 +351,7 @@ public class AlertRuleRepositoryTest {
         @DisplayName("should match rules within radius and exclude rules outside radius")
         void shouldMatchRulesWithinRadiusAndExcludeRulesOutsideRadius() {
             // primaryLocation is at (14.5500, 121.0300) [Makati area]
-            GeographicArea cebuArea = persistGeographicArea("072217000", "Cebu City", GeographicAreaType.MUNICIPALITY);
+            GeographicArea cebuArea = persistGeographicArea("0722170000", "Cebu City", GeographicAreaType.MUNICIPALITY);
             Location cebuLocation = persistLocation(primaryUser, "Cebu Office", "Colon St", 10.3157, 123.8854, cebuArea);
 
             // Rule 1: at Makati with radius 15.0 km

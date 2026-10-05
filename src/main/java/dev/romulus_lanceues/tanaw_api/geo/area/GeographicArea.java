@@ -17,6 +17,12 @@ import java.util.UUID;
                         name = "uk_geographic_area_psgc_code",
                         columnNames = "psgc_code"
                 )
+        },
+        indexes = {
+                @Index(
+                        name = "idx_geographic_areas_parent",
+                        columnList = "parent_id, name"
+                )
         }
 )
 @Getter
@@ -28,7 +34,7 @@ public class GeographicArea {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "psgc_code", nullable = false, length = 20)
+    @Column(name = "psgc_code", nullable = false, length = 10)
     private String psgcCode;
 
     @Column(nullable = false, length = 150)

@@ -58,7 +58,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should persist geographic area and generate ID")
         void shouldPersistGeographicAreaAndGenerateId() {
-            GeographicArea area = createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true);
+            GeographicArea area = createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true);
 
             GeographicArea saved = geographicAreaRepository.saveAndFlush(area);
 
@@ -71,7 +71,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should persist geographic area with all fields")
         void shouldPersistGeographicAreaWithAllFields() {
-            GeographicArea area = createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true);
+            GeographicArea area = createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true);
 
             GeographicArea saved = geographicAreaRepository.saveAndFlush(area);
 
@@ -81,7 +81,7 @@ class GeographicAreaRepositoryTest {
                     .isPresent()
                     .hasValueSatisfying(persisted -> {
                         assertThat(persisted.getId()).isEqualTo(saved.getId());
-                        assertThat(persisted.getPsgcCode()).isEqualTo("137400000");
+                        assertThat(persisted.getPsgcCode()).isEqualTo("1374000000");
                         assertThat(persisted.getName()).isEqualTo("Quezon City");
                         assertThat(persisted.getType()).isEqualTo(GeographicAreaType.MUNICIPALITY);
                         assertThat(persisted.isActive()).isTrue();
@@ -92,7 +92,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should persist geographic area without parent")
         void shouldPersistGeographicAreaWithoutParent() {
-            GeographicArea area = createArea("130000000", "National Capital Region", GeographicAreaType.REGION, null, true);
+            GeographicArea area = createArea("1300000000", "National Capital Region", GeographicAreaType.REGION, null, true);
 
             GeographicArea saved = geographicAreaRepository.saveAndFlush(area);
 
@@ -107,9 +107,9 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should persist geographic area with parent relationship")
         void shouldPersistGeographicAreaWithParentRelationship() {
             GeographicArea parent = entityManager.persistAndFlush(
-                    createArea("130000000", "National Capital Region", GeographicAreaType.REGION, null, true)
+                    createArea("1300000000", "National Capital Region", GeographicAreaType.REGION, null, true)
             );
-            GeographicArea child = createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, parent, true);
+            GeographicArea child = createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, parent, true);
             GeographicArea saved = geographicAreaRepository.saveAndFlush(child);
             entityManager.clear();
 
@@ -128,12 +128,21 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should enforce unique constraint on psgcCode")
         void shouldEnforceUniqueConstraintOnPsgcCode() {
             entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
 
-            GeographicArea duplicateArea = createArea("137400000", "Duplicate City", GeographicAreaType.MUNICIPALITY, null, true);
+            GeographicArea duplicateArea = createArea("1374000000", "Duplicate City", GeographicAreaType.MUNICIPALITY, null, true);
 
             assertThatThrownBy(() -> geographicAreaRepository.saveAndFlush(duplicateArea))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+
+        @Test
+        @DisplayName("should enforce 10-digit check constraint on psgcCode")
+        void shouldEnforceCheckConstraintOnPsgcCode() {
+            GeographicArea invalidCodeArea = createArea("137400000", "Invalid Length", GeographicAreaType.MUNICIPALITY, null, true);
+
+            assertThatThrownBy(() -> geographicAreaRepository.saveAndFlush(invalidCodeArea))
                     .isInstanceOf(DataIntegrityViolationException.class);
         }
 
@@ -141,7 +150,7 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should persist status changes when activated or deactivated")
         void shouldPersistStatusChangesWhenActivatedOrDeactivated() {
             GeographicArea area = entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
 
             area.deactivate();
@@ -168,7 +177,7 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should find geographic area by PSGC code")
         void shouldFindGeographicAreaByPsgcCode() {
             GeographicArea area = entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
 
             Optional<GeographicArea> found = geographicAreaRepository.findByPsgcCode(area.getPsgcCode());
@@ -177,7 +186,7 @@ class GeographicAreaRepositoryTest {
                     .isPresent()
                     .hasValueSatisfying(persisted -> {
                         assertThat(persisted.getId()).isEqualTo(area.getId());
-                        assertThat(persisted.getPsgcCode()).isEqualTo("137400000");
+                        assertThat(persisted.getPsgcCode()).isEqualTo("1374000000");
                         assertThat(persisted.getName()).isEqualTo("Quezon City");
                         assertThat(persisted.getType()).isEqualTo(GeographicAreaType.MUNICIPALITY);
                         assertThat(persisted.isActive()).isTrue();
@@ -187,7 +196,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should return empty when PSGC code is not registered")
         void shouldReturnEmptyWhenPsgcCodeIsNotRegistered() {
-            Optional<GeographicArea> found = geographicAreaRepository.findByPsgcCode("999999999");
+            Optional<GeographicArea> found = geographicAreaRepository.findByPsgcCode("9999999999");
 
             assertThat(found).isEmpty();
         }
@@ -201,10 +210,10 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should return true when geographic area exists with given PSGC code")
         void shouldReturnTrueWhenExistsByPsgcCode() {
             entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
 
-            boolean exists = geographicAreaRepository.existsByPsgcCode("137400000");
+            boolean exists = geographicAreaRepository.existsByPsgcCode("1374000000");
 
             assertThat(exists).isTrue();
         }
@@ -212,7 +221,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should return false when PSGC code does not exist")
         void shouldReturnFalseWhenPsgcCodeDoesNotExist() {
-            boolean exists = geographicAreaRepository.existsByPsgcCode("999999999");
+            boolean exists = geographicAreaRepository.existsByPsgcCode("9999999999");
 
             assertThat(exists).isFalse();
         }
@@ -225,9 +234,9 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should find all geographic areas matching specified type")
         void shouldFindAllGeographicAreasMatchingSpecifiedType() {
-            entityManager.persistAndFlush(createArea("130000000", "National Capital Region", GeographicAreaType.REGION, null, true));
-            entityManager.persistAndFlush(createArea("040000000", "CALABARZON", GeographicAreaType.REGION, null, true));
-            entityManager.persistAndFlush(createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
+            entityManager.persistAndFlush(createArea("1300000000", "National Capital Region", GeographicAreaType.REGION, null, true));
+            entityManager.persistAndFlush(createArea("0400000000", "CALABARZON", GeographicAreaType.REGION, null, true));
+            entityManager.persistAndFlush(createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
 
             List<GeographicArea> regions = geographicAreaRepository.findByType(GeographicAreaType.REGION);
 
@@ -238,10 +247,26 @@ class GeographicAreaRepositoryTest {
         }
 
         @Test
+        @DisplayName("should find all geographic areas matching new types CITY, SPECIAL_AREA, SUB_MUNICIPALITY")
+        void shouldFindAllGeographicAreasMatchingNewTypes() {
+            entityManager.persistAndFlush(createArea("1376000000", "City of Manila", GeographicAreaType.CITY, null, true));
+            entityManager.persistAndFlush(createArea("1376010000", "Tondo", GeographicAreaType.SUB_MUNICIPALITY, null, true));
+            entityManager.persistAndFlush(createArea("1299000000", "Cotabato City", GeographicAreaType.SPECIAL_AREA, null, true));
+
+            List<GeographicArea> cities = geographicAreaRepository.findByType(GeographicAreaType.CITY);
+            List<GeographicArea> subMunicipalities = geographicAreaRepository.findByType(GeographicAreaType.SUB_MUNICIPALITY);
+            List<GeographicArea> specialAreas = geographicAreaRepository.findByType(GeographicAreaType.SPECIAL_AREA);
+
+            assertThat(cities).hasSize(1).extracting(GeographicArea::getName).containsExactly("City of Manila");
+            assertThat(subMunicipalities).hasSize(1).extracting(GeographicArea::getName).containsExactly("Tondo");
+            assertThat(specialAreas).hasSize(1).extracting(GeographicArea::getName).containsExactly("Cotabato City");
+        }
+
+        @Test
         @DisplayName("should return both active and inactive geographic areas matching specified type")
         void shouldReturnBothActiveAndInactiveGeographicAreasMatchingSpecifiedType() {
-            entityManager.persistAndFlush(createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
-            entityManager.persistAndFlush(createArea("137600000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
+            entityManager.persistAndFlush(createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
+            entityManager.persistAndFlush(createArea("1376000000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
 
             List<GeographicArea> municipalities = geographicAreaRepository.findByType(GeographicAreaType.MUNICIPALITY);
 
@@ -254,7 +279,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should return empty list when no geographic areas match specified type")
         void shouldReturnEmptyListWhenNoGeographicAreasMatchSpecifiedType() {
-            entityManager.persistAndFlush(createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
+            entityManager.persistAndFlush(createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
 
             List<GeographicArea> provinces = geographicAreaRepository.findByType(GeographicAreaType.PROVINCE);
 
@@ -269,9 +294,9 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should find only active geographic areas matching specified type")
         void shouldFindOnlyActiveGeographicAreasMatchingSpecifiedType() {
-            entityManager.persistAndFlush(createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
-            entityManager.persistAndFlush(createArea("137600000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
-            entityManager.persistAndFlush(createArea("130000000", "National Capital Region", GeographicAreaType.REGION, null, true));
+            entityManager.persistAndFlush(createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
+            entityManager.persistAndFlush(createArea("1376000000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
+            entityManager.persistAndFlush(createArea("1300000000", "National Capital Region", GeographicAreaType.REGION, null, true));
 
             List<GeographicArea> activeMunicipalities = geographicAreaRepository.findByTypeAndActiveTrue(GeographicAreaType.MUNICIPALITY);
 
@@ -284,7 +309,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should return empty list when matching type exists but all are inactive")
         void shouldReturnEmptyListWhenMatchingTypeExistsButAllAreInactive() {
-            entityManager.persistAndFlush(createArea("137600000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
+            entityManager.persistAndFlush(createArea("1376000000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
 
             List<GeographicArea> activeMunicipalities = geographicAreaRepository.findByTypeAndActiveTrue(GeographicAreaType.MUNICIPALITY);
 
@@ -308,10 +333,10 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should find all child geographic areas by parent ID")
         void shouldFindAllChildGeographicAreasByParentId() {
             GeographicArea parent = entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
-            entityManager.persistAndFlush(createArea("137404001", "Batasan Hills", GeographicAreaType.BARANGAY, parent, true));
-            entityManager.persistAndFlush(createArea("137404002", "Commonwealth", GeographicAreaType.BARANGAY, parent, false));
+            entityManager.persistAndFlush(createArea("1374040001", "Batasan Hills", GeographicAreaType.BARANGAY, parent, true));
+            entityManager.persistAndFlush(createArea("1374040002", "Commonwealth", GeographicAreaType.BARANGAY, parent, false));
 
             List<GeographicArea> children = geographicAreaRepository.findByParentId(parent.getId());
 
@@ -325,15 +350,15 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should exclude geographic areas belonging to different parent or without parent")
         void shouldExcludeGeographicAreasBelongingToDifferentParentOrWithoutParent() {
             GeographicArea parent1 = entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
             GeographicArea parent2 = entityManager.persistAndFlush(
-                    createArea("137600000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1376000000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, true)
             );
 
-            entityManager.persistAndFlush(createArea("137404001", "Batasan Hills", GeographicAreaType.BARANGAY, parent1, true));
-            entityManager.persistAndFlush(createArea("137601001", "Barangay 1", GeographicAreaType.BARANGAY, parent2, true));
-            entityManager.persistAndFlush(createArea("130000000", "National Capital Region", GeographicAreaType.REGION, null, true));
+            entityManager.persistAndFlush(createArea("1374040001", "Batasan Hills", GeographicAreaType.BARANGAY, parent1, true));
+            entityManager.persistAndFlush(createArea("1376010001", "Barangay 1", GeographicAreaType.BARANGAY, parent2, true));
+            entityManager.persistAndFlush(createArea("1300000000", "National Capital Region", GeographicAreaType.REGION, null, true));
 
             List<GeographicArea> parent1Children = geographicAreaRepository.findByParentId(parent1.getId());
 
@@ -347,7 +372,7 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should return empty list when parent has no children")
         void shouldReturnEmptyListWhenParentHasNoChildren() {
             GeographicArea parent = entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
 
             List<GeographicArea> children = geographicAreaRepository.findByParentId(parent.getId());
@@ -372,10 +397,10 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should find only active child geographic areas by parent ID")
         void shouldFindOnlyActiveChildGeographicAreasByParentId() {
             GeographicArea parent = entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
-            entityManager.persistAndFlush(createArea("137404001", "Batasan Hills", GeographicAreaType.BARANGAY, parent, true));
-            entityManager.persistAndFlush(createArea("137404002", "Commonwealth", GeographicAreaType.BARANGAY, parent, false));
+            entityManager.persistAndFlush(createArea("1374040001", "Batasan Hills", GeographicAreaType.BARANGAY, parent, true));
+            entityManager.persistAndFlush(createArea("1374040002", "Commonwealth", GeographicAreaType.BARANGAY, parent, false));
 
             List<GeographicArea> activeChildren = geographicAreaRepository.findByParentIdAndActiveTrue(parent.getId());
 
@@ -389,9 +414,9 @@ class GeographicAreaRepositoryTest {
         @DisplayName("should return empty list when parent has children but all are inactive")
         void shouldReturnEmptyListWhenParentHasChildrenButAllAreInactive() {
             GeographicArea parent = entityManager.persistAndFlush(
-                    createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
+                    createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true)
             );
-            entityManager.persistAndFlush(createArea("137404002", "Commonwealth", GeographicAreaType.BARANGAY, parent, false));
+            entityManager.persistAndFlush(createArea("1374040002", "Commonwealth", GeographicAreaType.BARANGAY, parent, false));
 
             List<GeographicArea> activeChildren = geographicAreaRepository.findByParentIdAndActiveTrue(parent.getId());
 
@@ -414,9 +439,9 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should find all active geographic areas across all types")
         void shouldFindAllActiveGeographicAreasAcrossAllTypes() {
-            entityManager.persistAndFlush(createArea("130000000", "National Capital Region", GeographicAreaType.REGION, null, true));
-            entityManager.persistAndFlush(createArea("137400000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
-            entityManager.persistAndFlush(createArea("137600000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
+            entityManager.persistAndFlush(createArea("1300000000", "National Capital Region", GeographicAreaType.REGION, null, true));
+            entityManager.persistAndFlush(createArea("1374000000", "Quezon City", GeographicAreaType.MUNICIPALITY, null, true));
+            entityManager.persistAndFlush(createArea("1376000000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
 
             List<GeographicArea> activeAreas = geographicAreaRepository.findByActiveTrue();
 
@@ -429,7 +454,7 @@ class GeographicAreaRepositoryTest {
         @Test
         @DisplayName("should return empty list when no active geographic areas exist")
         void shouldReturnEmptyListWhenNoActiveGeographicAreasExist() {
-            entityManager.persistAndFlush(createArea("137600000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
+            entityManager.persistAndFlush(createArea("1376000000", "City of Manila", GeographicAreaType.MUNICIPALITY, null, false));
 
             List<GeographicArea> activeAreas = geographicAreaRepository.findByActiveTrue();
 

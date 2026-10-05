@@ -127,10 +127,10 @@ class FlywayMigrationTest {
         );
 
         assertThat(versions)
-                .as("All 12 versioned migrations should have been applied successfully")
+                .as("All 13 versioned migrations should have been applied successfully")
                 .containsExactly(
                         "1", "2", "3", "4", "5", "6",
-                        "7", "8", "9", "10", "11", "12"
+                        "7", "8", "9", "10", "11", "12", "13"
                 );
     }
 }
