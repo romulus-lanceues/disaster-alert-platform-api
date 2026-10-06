@@ -35,11 +35,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
                 de.disasterType,
                 de.id,
                 de.occurredAt,
-                de.magnitude,
-                de.severity,
-                de.depthKm,
-                de.latitude,
-                de.longitude
+                de.severity
             )
             """;
 

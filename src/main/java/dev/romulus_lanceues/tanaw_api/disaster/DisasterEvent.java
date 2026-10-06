@@ -8,7 +8,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.locationtech.jts.geom.Point;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import tools.jackson.databind.JsonNode;
@@ -23,6 +22,10 @@ import java.util.UUID;
                 @UniqueConstraint(
                         name = "uk_disaster_source_external",
                         columnNames = {"source", "external_id"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_disaster_id_type",
+                        columnNames = {"id", "disaster_type"}
                 )
         })
 @Getter
@@ -48,17 +51,14 @@ public class DisasterEvent {
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
 
-    private Double latitude;
+    @Column(length = 20)
+    private String status;
 
-    private Double longitude;
+    @Column(name = "source_updated_at", nullable = false)
+    private Instant sourceUpdatedAt;
 
-    @JdbcTypeCode(SqlTypes.GEOGRAPHY)
-    private Point location;
-
-    private Double magnitude;
-
-    @Column(name = "depth_km")
-    private Double depthKm;
+    @Column(columnDefinition = "TEXT")
+    private String place;
 
     @Column(length = 30)
     private String severity;

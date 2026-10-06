@@ -9,10 +9,9 @@ public record DisasterEventRequest(
         String externalId,
         DisasterType disasterType,
         Instant occurredAt,
-        Double latitude,
-        Double longitude,
-        Double magnitude,
-        Double depthKm,
+        String status,
+        Instant sourceUpdatedAt,
+        String place,
         String severity,
         JsonNode rawPayload
 ) {
