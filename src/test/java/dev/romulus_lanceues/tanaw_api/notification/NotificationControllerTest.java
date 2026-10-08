@@ -290,11 +290,7 @@ class NotificationControllerTest {
                 DisasterType.EARTHQUAKE,
                 UUID.randomUUID(),
                 now,
-                5.2,
-                "MODERATE",
-                10.0,
-                14.60,
-                120.98
+                "MODERATE"
         );
     }
 }

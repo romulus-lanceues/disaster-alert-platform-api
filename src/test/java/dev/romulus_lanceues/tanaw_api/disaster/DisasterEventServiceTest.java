@@ -1,14 +1,9 @@
 package dev.romulus_lanceues.tanaw_api.disaster;
 
-import dev.romulus_lanceues.tanaw_api.location.GeoPointFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.geom.PrecisionModel;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -38,32 +33,21 @@ class DisasterEventServiceTest {
     @Mock
     private DisasterEventRepository disasterEventRepository;
 
-    @Mock
-    private GeoPointFactory geoPointFactory;
-
     @InjectMocks
     private DisasterEventService disasterEventService;
 
 
-
-    private Point buildPoint(double lat, double lon) {
-        return new GeometryFactory(new PrecisionModel(), 4326)
-                .createPoint(new Coordinate(lon, lat));
-    }
-
     private DisasterEvent buildDisasterEvent(UUID id, String source, String externalId,
-                                             DisasterType disasterType, double lat, double lon) {
+                                             DisasterType disasterType) {
         return DisasterEvent.builder()
                 .id(id)
                 .source(source)
                 .externalId(externalId)
                 .disasterType(disasterType)
                 .occurredAt(Instant.now())
-                .latitude(lat)
-                .longitude(lon)
-                .location(buildPoint(lat, lon))
-                .magnitude(6.0)
-                .depthKm(10.0)
+                .sourceUpdatedAt(Instant.now())
+                .status("automatic")
+                .place("25 km NW of Manila, Philippines")
                 .severity("HIGH")
                 .build();
     }
@@ -77,17 +61,19 @@ class DisasterEventServiceTest {
         @DisplayName("should create and return disaster event when source and externalId do not exist")
         void shouldCreateAndReturnDisasterEvent_whenNotExists() {
 
+            Instant occurredAt = Instant.now();
+            Instant sourceUpdatedAt = occurredAt.plusSeconds(60);
+
             DisasterEventRequest request = new DisasterEventRequest(
                     "USGS", "usgs-001", DisasterType.EARTHQUAKE,
-                    Instant.now(), 14.5995, 120.9842, 6.2, 12.0, "HIGH", null);
+                    occurredAt, "automatic", sourceUpdatedAt,
+                    "25 km NW of Manila", "HIGH", null);
 
-            Point point = buildPoint(14.5995, 120.9842);
             DisasterEvent saved = buildDisasterEvent(UUID.randomUUID(), "USGS", "usgs-001",
-                    DisasterType.EARTHQUAKE, 14.5995, 120.9842);
+                    DisasterType.EARTHQUAKE);
 
             given(disasterEventRepository.existsBySourceAndExternalId("USGS", "usgs-001"))
                     .willReturn(false);
-            given(geoPointFactory.create(14.5995, 120.9842)).willReturn(point);
             given(disasterEventRepository.save(any(DisasterEvent.class))).willReturn(saved);
 
             DisasterEvent result = disasterEventService.createDisasterEvent(request);
@@ -102,7 +88,12 @@ class DisasterEventServiceTest {
 
             assertThat(createdDisasterEvent.getSource()).isEqualTo("USGS");
             assertThat(createdDisasterEvent.getExternalId()).isEqualTo("usgs-001");
-            assertThat(createdDisasterEvent.getLatitude()).isEqualTo(point.getCoordinate().getY());
+            assertThat(createdDisasterEvent.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
+            assertThat(createdDisasterEvent.getOccurredAt()).isEqualTo(occurredAt);
+            assertThat(createdDisasterEvent.getStatus()).isEqualTo("automatic");
+            assertThat(createdDisasterEvent.getSourceUpdatedAt()).isEqualTo(sourceUpdatedAt);
+            assertThat(createdDisasterEvent.getPlace()).isEqualTo("25 km NW of Manila");
+            assertThat(createdDisasterEvent.getSeverity()).isEqualTo("HIGH");
         }
 
         @Test
@@ -111,7 +102,8 @@ class DisasterEventServiceTest {
 
             DisasterEventRequest request = new DisasterEventRequest(
                     "USGS", "usgs-001", DisasterType.EARTHQUAKE,
-                    Instant.now(), 14.5995, 120.9842, 6.2, 12.0, "HIGH", null);
+                    Instant.now(), "automatic", Instant.now(),
+                    "25 km NW of Manila", "HIGH", null);
 
             given(disasterEventRepository.existsBySourceAndExternalId("USGS", "usgs-001"))
                     .willReturn(true);
@@ -125,12 +117,13 @@ class DisasterEventServiceTest {
         }
 
         @Test
-        @DisplayName("should handle null coordinates gracefully without calling GeoPointFactory")
-        void shouldHandleNullCoordinates_gracefully() {
+        @DisplayName("should handle null occurredAt by defaulting to Instant.now()")
+        void shouldHandleNullOccurredAt_gracefully() {
 
             DisasterEventRequest request = new DisasterEventRequest(
                     "PAGASA", "typhoon-001", DisasterType.TYPHOON,
-                    null, null, null, null, null, "MODERATE", null);
+                    null, null, Instant.now(),
+                    null, "MODERATE", null);
 
             DisasterEvent saved = DisasterEvent.builder()
                     .id(UUID.randomUUID())
@@ -138,6 +131,7 @@ class DisasterEventServiceTest {
                     .externalId("typhoon-001")
                     .disasterType(DisasterType.TYPHOON)
                     .occurredAt(Instant.now())
+                    .sourceUpdatedAt(Instant.now())
                     .build();
 
             given(disasterEventRepository.existsBySourceAndExternalId("PAGASA", "typhoon-001"))
@@ -147,7 +141,10 @@ class DisasterEventServiceTest {
             DisasterEvent result = disasterEventService.createDisasterEvent(request);
 
             assertThat(result).isNotNull();
-            then(geoPointFactory).should(never()).create(any(Double.class), any(Double.class));
+
+            ArgumentCaptor<DisasterEvent> captor = ArgumentCaptor.forClass(DisasterEvent.class);
+            verify(disasterEventRepository).save(captor.capture());
+            assertThat(captor.getValue().getOccurredAt()).isNotNull();
         }
     }
 
@@ -161,7 +158,7 @@ class DisasterEventServiceTest {
         void shouldReturnDisasterEvent_whenFoundById() {
             UUID id = UUID.randomUUID();
             DisasterEvent event = buildDisasterEvent(id, "PHIVOLCS", "phi-01",
-                    DisasterType.EARTHQUAKE, 14.0, 121.0);
+                    DisasterType.EARTHQUAKE);
 
             given(disasterEventRepository.findById(id)).willReturn(Optional.of(event));
 
@@ -195,7 +192,7 @@ class DisasterEventServiceTest {
         void shouldReturnDisasterEvent_whenFoundBySourceAndExternalId() {
 
             DisasterEvent event = buildDisasterEvent(UUID.randomUUID(), "USGS", "ext-1",
-                    DisasterType.EARTHQUAKE, 14.0, 121.0);
+                    DisasterType.EARTHQUAKE);
 
             given(disasterEventRepository.findBySourceAndExternalId("USGS", "ext-1"))
                     .willReturn(Optional.of(event));
@@ -232,8 +229,8 @@ class DisasterEventServiceTest {
 
             Pageable pageable = PageRequest.of(0, 10);
             List<DisasterEvent> list = List.of(
-                    buildDisasterEvent(UUID.randomUUID(), "USGS", "1", DisasterType.EARTHQUAKE, 14.0, 121.0),
-                    buildDisasterEvent(UUID.randomUUID(), "PAGASA", "2", DisasterType.TYPHOON, 15.0, 122.0)
+                    buildDisasterEvent(UUID.randomUUID(), "USGS", "1", DisasterType.EARTHQUAKE),
+                    buildDisasterEvent(UUID.randomUUID(), "PAGASA", "2", DisasterType.TYPHOON)
             );
             Page<DisasterEvent> page = new PageImpl<>(list, pageable, 2);
 
@@ -257,7 +254,7 @@ class DisasterEventServiceTest {
 
             Pageable pageable = PageRequest.of(0, 5);
             List<DisasterEvent> earthquakes = List.of(
-                    buildDisasterEvent(UUID.randomUUID(), "USGS", "1", DisasterType.EARTHQUAKE, 14.0, 121.0)
+                    buildDisasterEvent(UUID.randomUUID(), "USGS", "1", DisasterType.EARTHQUAKE)
             );
             Page<DisasterEvent> page = new PageImpl<>(earthquakes, pageable, 1);
 
@@ -281,7 +278,7 @@ class DisasterEventServiceTest {
         void shouldReturnLatestDisasterEvent_whenExists() {
 
             DisasterEvent latest = buildDisasterEvent(UUID.randomUUID(), "USGS", "latest-1",
-                    DisasterType.EARTHQUAKE, 14.0, 121.0);
+                    DisasterType.EARTHQUAKE);
 
             given(disasterEventRepository.findTopByDisasterTypeOrderByOccurredAtDesc(DisasterType.EARTHQUAKE))
                     .willReturn(Optional.of(latest));
@@ -305,30 +302,6 @@ class DisasterEventServiceTest {
     }
 
     @Nested
-    @DisplayName("getDisasterEventsWithinRadius")
-    class GetDisasterEventsWithinRadius {
-
-        @Test
-        @DisplayName("should return disaster events within specified radius")
-        void shouldReturnDisasterEvents_withinRadius() {
-
-            double lat = 14.5995;
-            double lon = 120.9842;
-            double radiusKm = 50.0;
-            List<DisasterEvent> events = List.of(
-                    buildDisasterEvent(UUID.randomUUID(), "PHIVOLCS", "q1", DisasterType.EARTHQUAKE, 14.6, 121.0)
-            );
-
-            given(disasterEventRepository.findWithinRadius(lat, lon, radiusKm)).willReturn(events);
-
-            List<DisasterEvent> result = disasterEventService.getDisasterEventsWithinRadius(lat, lon, radiusKm);
-
-            assertThat(result).hasSize(1);
-            assertThat(result).isEqualTo(events);
-        }
-    }
-
-    @Nested
     @DisplayName("getDisasterEventsBetween")
     class GetDisasterEventsBetween {
 
@@ -339,7 +312,7 @@ class DisasterEventServiceTest {
             Instant start = Instant.now().minusSeconds(3600);
             Instant end = Instant.now();
             List<DisasterEvent> events = List.of(
-                    buildDisasterEvent(UUID.randomUUID(), "USGS", "t1", DisasterType.EARTHQUAKE, 14.0, 121.0)
+                    buildDisasterEvent(UUID.randomUUID(), "USGS", "t1", DisasterType.EARTHQUAKE)
             );
 
             given(disasterEventRepository.findByOccurredAtBetweenOrderByOccurredAtDesc(start, end))

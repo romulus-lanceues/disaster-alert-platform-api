@@ -17,6 +17,7 @@ spring:
     properties:
       hibernate:
         format_sql: false
+      hibernate.type.json_format_mapper: jackson3
 
   flyway:
     enabled: true

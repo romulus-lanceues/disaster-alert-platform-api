@@ -493,7 +493,7 @@ class AlertRepositoryTest {
             assertThat(fetchedEvent.getSource()).isEqualTo("USGS");
             assertThat(fetchedEvent.getExternalId()).isEqualTo("usgs-event-001");
             assertThat(fetchedEvent.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-            assertThat(fetchedEvent.getMagnitude()).isEqualTo(6.2);
+            assertThat(fetchedEvent.getSeverity()).isEqualTo("HIGH");
 
             // Verify alert rule is fetched
             AlertRule fetchedRule = fetchedAlert.getAlertRule();
@@ -579,11 +579,9 @@ class AlertRepositoryTest {
                 .externalId(externalId)
                 .disasterType(type)
                 .occurredAt(Instant.now())
-                .latitude(lat)
-                .longitude(lon)
-                .location(geoPointFactory.create(lat, lon))
-                .magnitude(magnitude)
-                .depthKm(10.0)
+                .sourceUpdatedAt(Instant.now())
+                .status("reviewed")
+                .place("Manila")
                 .severity("HIGH")
                 .build();
         return entityManager.persistAndFlush(event);

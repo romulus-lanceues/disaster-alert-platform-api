@@ -56,11 +56,7 @@ class NotificationServiceTest {
                 DisasterType.EARTHQUAKE,
                 UUID.randomUUID(),
                 Instant.now(),
-                6.2,
-                "HIGH",
-                10.0,
-                14.5995,
-                120.9842
+                "HIGH"
         );
     }
 
@@ -146,11 +142,7 @@ class NotificationServiceTest {
             assertThat(actualResponse.locationName()).isEqualTo("Home");
             assertThat(actualResponse.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
             assertThat(actualResponse.disasterEventId()).isEqualTo(expectedResponse.disasterEventId());
-            assertThat(actualResponse.magnitude()).isEqualTo(6.2);
             assertThat(actualResponse.severity()).isEqualTo("HIGH");
-            assertThat(actualResponse.depthKm()).isEqualTo(10.0);
-            assertThat(actualResponse.latitude()).isEqualTo(14.5995);
-            assertThat(actualResponse.longitude()).isEqualTo(120.9842);
         }
 
         @Test
@@ -193,7 +185,7 @@ class NotificationServiceTest {
             assertThat(item.destination()).isEqualTo("user@example.com");
             assertThat(item.locationName()).isEqualTo("Home");
             assertThat(item.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-            assertThat(item.magnitude()).isEqualTo(6.2);
+            assertThat(item.severity()).isEqualTo("HIGH");
         }
 
         @Test
