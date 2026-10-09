@@ -94,10 +94,9 @@ class AlertServiceTest {
                 .externalId("usgs-001")
                 .disasterType(DisasterType.EARTHQUAKE)
                 .occurredAt(Instant.now())
-                .latitude(lat)
-                .longitude(lon)
-                .magnitude(6.2)
-                .depthKm(10.0)
+                .sourceUpdatedAt(Instant.now())
+                .status("reviewed")
+                .place("Manila")
                 .severity("HIGH")
                 .build();
     }

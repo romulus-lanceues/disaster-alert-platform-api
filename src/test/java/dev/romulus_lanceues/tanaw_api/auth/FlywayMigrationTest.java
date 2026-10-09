@@ -65,7 +65,8 @@ class FlywayMigrationTest {
                         "disaster_events",
                         "alerts",
                         "notifications",
-                        "refresh_token_session"
+                        "refresh_token_session",
+                        "earthquake"
                 );
     }
 
@@ -127,10 +128,58 @@ class FlywayMigrationTest {
         );
 
         assertThat(versions)
-                .as("All 13 versioned migrations should have been applied successfully")
+                .as("All 14 versioned migrations should have been applied successfully")
                 .containsExactly(
                         "1", "2", "3", "4", "5", "6",
-                        "7", "8", "9", "10", "11", "12", "13"
+                        "7", "8", "9", "10", "11", "12", "13", "14"
                 );
+    }
+
+    @Test
+    @DisplayName("earthquake table has expected columns from V14 migration")
+    void earthquakeTable_hasExpectedColumnsFromV14() {
+        List<String> columns = jdbcTemplate.queryForList(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name   = 'earthquake'
+                ORDER BY ordinal_position
+                """,
+                String.class
+        );
+
+        assertThat(columns)
+                .as("earthquake table should have all required columns from V14 migration")
+                .contains(
+                        "disaster_event_id",
+                        "disaster_type",
+                        "latitude",
+                        "longitude",
+                        "location",
+                        "magnitude",
+                        "depth_km"
+                );
+    }
+
+    @Test
+    @DisplayName("disaster_events table has updated columns from V14 migration")
+    void disasterEventsTable_hasUpdatedColumnsFromV14() {
+        List<String> columns = jdbcTemplate.queryForList(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name   = 'disaster_events'
+                ORDER BY ordinal_position
+                """,
+                String.class
+        );
+
+        assertThat(columns)
+                .as("disaster_events table should contain new V14 columns")
+                .contains("status", "source_updated_at", "place");
+
+        assertThat(columns)
+                .as("disaster_events table should no longer contain dropped earthquake-specific columns")
+                .doesNotContain("latitude", "longitude", "location", "magnitude", "depth_km");
     }
 }

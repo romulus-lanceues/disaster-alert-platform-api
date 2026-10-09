@@ -1,9 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.disaster;
 
-import dev.romulus_lanceues.tanaw_api.location.GeoPointFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.locationtech.jts.geom.Point;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -21,7 +19,6 @@ import java.util.UUID;
 public class DisasterEventService {
 
     private final DisasterEventRepository disasterEventRepository;
-    private final GeoPointFactory geoPointFactory;
 
     @Transactional
     public DisasterEvent createDisasterEvent(DisasterEventRequest request) {
@@ -34,10 +31,6 @@ public class DisasterEventService {
                             .formatted(request.source(), request.externalId()));
         }
 
-        Point location = (request.latitude() != null && request.longitude() != null)
-                ? geoPointFactory.create(request.latitude(), request.longitude())
-                : null;
-
         Instant occurredAt = request.occurredAt() != null ? request.occurredAt() : Instant.now();
 
         DisasterEvent disasterEvent = DisasterEvent.builder()
@@ -45,11 +38,9 @@ public class DisasterEventService {
                 .externalId(request.externalId())
                 .disasterType(request.disasterType())
                 .occurredAt(occurredAt)
-                .latitude(request.latitude())
-                .longitude(request.longitude())
-                .location(location)
-                .magnitude(request.magnitude())
-                .depthKm(request.depthKm())
+                .status(request.status())
+                .sourceUpdatedAt(request.sourceUpdatedAt())
+                .place(request.place())
                 .severity(request.severity())
                 .rawPayload(request.rawPayload())
                 .build();
@@ -91,12 +82,6 @@ public class DisasterEventService {
         log.info("Fetching latest disaster event for type {}", disasterType);
 
         return disasterEventRepository.findTopByDisasterTypeOrderByOccurredAtDesc(disasterType);
-    }
-
-    public List<DisasterEvent> getDisasterEventsWithinRadius(double latitude, double longitude, double radiusInKm) {
-        log.info("Fetching disaster events within {} km of ({}, {})", radiusInKm, latitude, longitude);
-
-        return disasterEventRepository.findWithinRadius(latitude, longitude, radiusInKm);
     }
 
     public List<DisasterEvent> getDisasterEventsBetween(Instant start, Instant end) {

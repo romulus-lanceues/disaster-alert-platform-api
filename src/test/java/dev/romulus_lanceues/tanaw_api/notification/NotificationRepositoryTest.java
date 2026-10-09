@@ -350,11 +350,7 @@ public class NotificationRepositoryTest {
             // Disaster event details
             assertThat(response.disasterType()).isEqualTo(DisasterType.EARTHQUAKE);
             assertThat(response.disasterEventId()).isEqualTo(primaryDisasterEvent.getId());
-            assertThat(response.magnitude()).isEqualTo(6.2);
             assertThat(response.severity()).isEqualTo("HIGH");
-            assertThat(response.depthKm()).isEqualTo(10.0);
-            assertThat(response.latitude()).isEqualTo(14.6000);
-            assertThat(response.longitude()).isEqualTo(120.9850);
         }
 
         @Test
@@ -549,11 +545,9 @@ public class NotificationRepositoryTest {
                 .externalId(externalId)
                 .disasterType(type)
                 .occurredAt(Instant.now())
-                .latitude(lat)
-                .longitude(lon)
-                .location(geoPointFactory.create(lat, lon))
-                .magnitude(magnitude)
-                .depthKm(10.0)
+                .sourceUpdatedAt(Instant.now())
+                .status("reviewed")
+                .place("Manila")
                 .severity("HIGH")
                 .build();
         return entityManager.persistAndFlush(event);

@@ -17,6 +17,7 @@ spring:
     properties:
       hibernate:
         format_sql: false
+      hibernate.type.json_format_mapper: jackson3
 
   flyway:
     enabled: true
@@ -36,3 +37,13 @@ security:
     access-token-duration: PT10M
     refresh-token-duration: P30D
     secret: ${JWT_SECRET}
+
+usgs:
+  base-url: https://earthquake.usgs.gov/fdsnws/event/1
+  min-magnitude: 1.0
+  poll-interval: PT1M
+  bounding-box:
+    min-latitude: 4.0
+    max-latitude: 21.5
+    min-longitude: 116.0
+    max-longitude: 128.0

@@ -41,15 +41,7 @@ public record NotificationResponse(
         UUID disasterEventId,
         @Schema(description = "Timestamp when the disaster occurred", example = "2026-09-18T09:55:00Z")
         Instant occurredAt,
-        @Schema(description = "Reported disaster magnitude, when applicable", example = "5.2", nullable = true)
-        Double magnitude,
         @Schema(description = "Reported disaster severity", example = "MODERATE", nullable = true)
-        String severity,
-        @Schema(description = "Reported disaster depth in kilometers, when applicable", example = "10.0", nullable = true)
-        Double depthKm,
-        @Schema(description = "Latitude of the disaster event in degrees", example = "14.60")
-        Double latitude,
-        @Schema(description = "Longitude of the disaster event in degrees", example = "120.98")
-        Double longitude
+        String severity
 ) {
 }
