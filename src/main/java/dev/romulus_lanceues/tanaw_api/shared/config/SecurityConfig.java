@@ -58,12 +58,13 @@ public class SecurityConfig {
             ProblemDetailsAuthenticationEntryPoint authenticationEntryPoint,
             ProblemDetailsAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
-                .securityMatcher("/api/v1/auth/**", "/api/csrf")
+                .securityMatcher("/api/v1/auth/**", "/api/csrf", "/api/dev/**")
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .csrf(csrf -> csrf
+                        .ignoringRequestMatchers("/api/dev/**")
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)

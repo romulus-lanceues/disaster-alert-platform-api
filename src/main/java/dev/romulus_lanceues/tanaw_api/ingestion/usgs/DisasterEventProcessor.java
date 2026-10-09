@@ -23,7 +23,7 @@ public class DisasterEventProcessor {
     private final SeverityMapper severityMapper;
 
     @Transactional
-    public void persistDisasterEvent(UsgsFeature feature) {
+    public UUID persistDisasterEvent(UsgsFeature feature) {
 
         String id = feature.id();
         UsgsFeatureProperties disasterProperties = feature.properties();
@@ -36,7 +36,7 @@ public class DisasterEventProcessor {
                 severityMapper.fromUsgs(disasterProperties).toString(), disasterProperties.place(), rawPayload
         );
 
-        if(disasterPersistenceResult.isEmpty()) return;
+        if(disasterPersistenceResult.isEmpty()) return null;
 
         UpsertResult upsertResult = disasterPersistenceResult.get();
 
@@ -49,5 +49,7 @@ public class DisasterEventProcessor {
         disasterEventUpserter.upsertEarthquake(disasterPersistenceResult.get().id(),
                 disasterGeometry.latitude(), disasterGeometry.longitude(),
                 disasterProperties.mag(), disasterGeometry.depthKm());
+
+        return upsertResult.id();
     }
 }

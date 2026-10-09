@@ -1,5 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.ingestion.usgs;
 
+import dev.romulus_lanceues.tanaw_api.alert.AlertMatchingRepository;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UsgsFeature;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UsgsFeatureProperties;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UsgsGeometry;
@@ -9,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -37,6 +37,9 @@ class UsgsEarthquakeIngestionServiceTest {
 
     @Mock
     private DisasterEventProcessor disasterEventProcessor;
+
+    @Mock
+    private AlertMatchingRepository alertMatchingRepository;
 
     private MutableClock clock;
     private UsgsEarthquakeIngestionService service;
@@ -82,7 +85,7 @@ class UsgsEarthquakeIngestionServiceTest {
     @BeforeEach
     void setUp() {
         clock = new MutableClock(Instant.parse("2026-10-08T12:00:00Z"));
-        service = new UsgsEarthquakeIngestionService(usgsClient, clock, disasterEventProcessor);
+        service = new UsgsEarthquakeIngestionService(usgsClient, clock, disasterEventProcessor, alertMatchingRepository);
     }
 
     @Nested

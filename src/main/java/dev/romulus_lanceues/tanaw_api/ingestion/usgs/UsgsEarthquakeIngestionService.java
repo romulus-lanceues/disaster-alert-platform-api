@@ -1,5 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.ingestion.usgs;
 
+import dev.romulus_lanceues.tanaw_api.alert.AlertMatchingRepository;
+import dev.romulus_lanceues.tanaw_api.alert.CreatedAlerts;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UsgsFeature;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UsgsResponse;
 import lombok.RequiredArgsConstructor;
@@ -10,7 +12,9 @@ import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +24,7 @@ class UsgsEarthquakeIngestionService {
     private final UsgsClient usgsClient;
     private final Clock clock;
     private final DisasterEventProcessor disasterEventProcessor;
+    private final AlertMatchingRepository alertMatchingRepository;
 
     private Instant lastSync;
 
@@ -32,6 +37,9 @@ class UsgsEarthquakeIngestionService {
         Instant started = Instant.now(clock);
 
         try {
+
+            List<UUID> persistedEventsId = new ArrayList<>();
+
             UsgsResponse response = usgsClient.fetchUpdatedAfter(lastSync.minus(Duration.ofMinutes(2)));
 
             List<UsgsFeature> features = response != null && response.features() != null
@@ -52,8 +60,22 @@ class UsgsEarthquakeIngestionService {
                                 feat.properties().url(),
                                 feat.rawPayload());
 
-                        disasterEventProcessor.persistDisasterEvent(feat);
+                        UUID persistedEventId = disasterEventProcessor.persistDisasterEvent(feat);
+
+                        if(persistedEventId != null){
+                            persistedEventsId.add(persistedEventId);
+                        }
                     });
+
+
+            if(!persistedEventsId.isEmpty()){
+                List<CreatedAlerts> alerts = alertMatchingRepository.persistAlert(persistedEventsId);
+
+                for(CreatedAlerts a : alerts){
+                    log.info("id:{}, disaster_id:{}, alert_rule_id:{}",
+                            a.id(), a.disasterEventId(), a.alertRuleId());
+                }
+            }
 
             lastSync = started;
         } catch (Exception ex) {
