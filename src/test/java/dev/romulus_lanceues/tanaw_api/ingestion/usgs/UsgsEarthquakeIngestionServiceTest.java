@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -19,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -69,13 +69,47 @@ class UsgsEarthquakeIngestionServiceTest {
         }
     }
 
-    private UsgsFeature createSampleFeature(String id) {
+    private UsgsFeature createEarthquakeFeature(String id) {
         UsgsFeatureProperties properties = new UsgsFeatureProperties(
                 5.0, "Near Leyte", 1712495000000L, 1712499000000L,
                 "reviewed", 0, "green", "https://earthquake.usgs.gov/" + id,
                 "M 5.0 - Leyte", "earthquake"
         );
         UsgsGeometry geometry = new UsgsGeometry("Point", List.of(124.8, 10.5, 15.0));
+        return new UsgsFeature(id, properties, geometry, "{}");
+    }
+
+    private UsgsFeature createNonEarthquakeFeature(String id, String type) {
+        UsgsFeatureProperties properties = new UsgsFeatureProperties(
+                3.0, "Some Place", 1712495000000L, 1712499000000L,
+                "reviewed", 0, null, "https://earthquake.usgs.gov/" + id,
+                "Title", type
+        );
+        UsgsGeometry geometry = new UsgsGeometry("Point", List.of(124.8, 10.5, 15.0));
+        return new UsgsFeature(id, properties, geometry, "{}");
+    }
+
+    private UsgsFeature createFeatureWithNullProperties(String id) {
+        UsgsGeometry geometry = new UsgsGeometry("Point", List.of(124.8, 10.5, 15.0));
+        return new UsgsFeature(id, null, geometry, "{}");
+    }
+
+    private UsgsFeature createFeatureWithNullGeometry(String id) {
+        UsgsFeatureProperties properties = new UsgsFeatureProperties(
+                5.0, "Near Leyte", 1712495000000L, 1712499000000L,
+                "reviewed", 0, "green", "https://earthquake.usgs.gov/" + id,
+                "M 5.0 - Leyte", "earthquake"
+        );
+        return new UsgsFeature(id, properties, null, "{}");
+    }
+
+    private UsgsFeature createFeatureWithMissingCoordinates(String id) {
+        UsgsFeatureProperties properties = new UsgsFeatureProperties(
+                5.0, "Near Leyte", 1712495000000L, 1712499000000L,
+                "reviewed", 0, "green", "https://earthquake.usgs.gov/" + id,
+                "M 5.0 - Leyte", "earthquake"
+        );
+        UsgsGeometry geometry = new UsgsGeometry("Point", List.of());
         return new UsgsFeature(id, properties, geometry, "{}");
     }
 
@@ -96,16 +130,132 @@ class UsgsEarthquakeIngestionServiceTest {
             // Initial lastSync = 12:00:00 - 1h = 11:00:00
             // Query since = 11:00:00 - 2min = 10:58:00
             Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
-            UsgsFeature f1 = createSampleFeature("us1");
-            UsgsFeature f2 = createSampleFeature("us2");
+            UsgsFeature f1 = createEarthquakeFeature("us1");
+            UsgsFeature f2 = createEarthquakeFeature("us2");
             given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
                     .willReturn(new UsgsResponse(List.of(f1, f2)));
 
-            service.ingest();
+            List<UUID> result = service.ingest();
 
             then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
             then(disasterEventProcessor).should().persistDisasterEvent(f1);
             then(disasterEventProcessor).should().persistDisasterEvent(f2);
+        }
+
+        @Test
+        @DisplayName("returns persisted event IDs from processor")
+        void returnsPersistedEventIds() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature f1 = createEarthquakeFeature("us1");
+            UUID id1 = UUID.randomUUID();
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(f1)));
+            given(disasterEventProcessor.persistDisasterEvent(f1)).willReturn(id1);
+
+            List<UUID> result = service.ingest();
+
+            assertThat(result).containsExactly(id1);
+        }
+
+        @Test
+        @DisplayName("excludes null IDs from persisted results")
+        void excludesNullIdsFromResults() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature f1 = createEarthquakeFeature("us1");
+            UsgsFeature f2 = createEarthquakeFeature("us2");
+            UUID id1 = UUID.randomUUID();
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(f1, f2)));
+            given(disasterEventProcessor.persistDisasterEvent(f1)).willReturn(id1);
+            given(disasterEventProcessor.persistDisasterEvent(f2)).willReturn(null);
+
+            List<UUID> result = service.ingest();
+
+            assertThat(result).containsExactly(id1);
+        }
+    }
+
+    @Nested
+    @DisplayName("ingest - feature filtering")
+    class FeatureFilteringTests {
+
+        @Test
+        @DisplayName("skips features with non-earthquake type")
+        void skipsNonEarthquakeType() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature nonEq = createNonEarthquakeFeature("us-explosion", "explosion");
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(nonEq)));
+
+            List<UUID> result = service.ingest();
+
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("skips features with null properties")
+        void skipsNullProperties() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature nullProps = createFeatureWithNullProperties("us-null-props");
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(nullProps)));
+
+            List<UUID> result = service.ingest();
+
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("skips features with null geometry")
+        void skipsNullGeometry() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature nullGeo = createFeatureWithNullGeometry("us-null-geo");
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(nullGeo)));
+
+            List<UUID> result = service.ingest();
+
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("skips features with missing coordinates")
+        void skipsMissingCoordinates() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature emptyCoords = createFeatureWithMissingCoordinates("us-empty-coords");
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(emptyCoords)));
+
+            List<UUID> result = service.ingest();
+
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("processes only earthquake features from a mixed batch")
+        void processesOnlyEarthquakesFromMixedBatch() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature earthquake = createEarthquakeFeature("us-eq");
+            UsgsFeature explosion = createNonEarthquakeFeature("us-explosion", "explosion");
+            UsgsFeature nullProps = createFeatureWithNullProperties("us-null-props");
+            UsgsFeature nullGeo = createFeatureWithNullGeometry("us-null-geo");
+            UUID eqId = UUID.randomUUID();
+
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(earthquake, explosion, nullProps, nullGeo)));
+            given(disasterEventProcessor.persistDisasterEvent(earthquake)).willReturn(eqId);
+
+            List<UUID> result = service.ingest();
+
+            then(disasterEventProcessor).should().persistDisasterEvent(earthquake);
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(explosion);
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(nullProps);
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(nullGeo);
+            assertThat(result).containsExactly(eqId);
         }
     }
 
@@ -128,7 +278,7 @@ class UsgsEarthquakeIngestionServiceTest {
 
             // Second run should use previous started time (12:00:00) minus 2 minutes = 11:58:00
             Instant expectedSecondQuery = Instant.parse("2026-10-08T11:58:00Z");
-            UsgsFeature f3 = createSampleFeature("us3");
+            UsgsFeature f3 = createEarthquakeFeature("us3");
             given(usgsClient.fetchUpdatedAfter(expectedSecondQuery))
                     .willReturn(new UsgsResponse(List.of(f3)));
 
@@ -155,7 +305,7 @@ class UsgsEarthquakeIngestionServiceTest {
             // Second run at 12:05:00 fails; third run at 12:10:00 succeeds
             clock.advance(Duration.ofMinutes(5));
             Instant secondQuery = Instant.parse("2026-10-08T11:58:00Z");
-            UsgsFeature recoveredFeature = createSampleFeature("us-recovered");
+            UsgsFeature recoveredFeature = createEarthquakeFeature("us-recovered");
             given(usgsClient.fetchUpdatedAfter(secondQuery))
                     .willThrow(new RuntimeException("Simulated network timeout"))
                     .willReturn(new UsgsResponse(List.of(recoveredFeature)));
@@ -172,27 +322,37 @@ class UsgsEarthquakeIngestionServiceTest {
         }
 
         @Test
-        @DisplayName("when processor throws exception, lastSync is not advanced")
-        void processorExceptionDoesNotAdvanceLastSync() {
-            // First run at 12:00:00: client succeeds with 1 feature, but processor throws
+        @DisplayName("when processor throws for one feature, lastSync still advances and other features are processed")
+        void processorExceptionIsIsolatedPerFeatureAndLastSyncAdvances() {
+            // Per-feature try/catch means a single processor failure does NOT prevent
+            // lastSync from advancing — only usgsClient failures do.
             Instant firstQuery = Instant.parse("2026-10-08T10:58:00Z");
-            UsgsFeature f1 = createSampleFeature("us-fail");
-            given(usgsClient.fetchUpdatedAfter(firstQuery))
-                    .willReturn(new UsgsResponse(List.of(f1)));
-            doThrow(new RuntimeException("Simulated database failure"))
-                    .when(disasterEventProcessor).persistDisasterEvent(f1);
+            UsgsFeature failingFeature = createEarthquakeFeature("us-fail");
+            UsgsFeature successFeature = createEarthquakeFeature("us-ok");
+            UUID successId = UUID.randomUUID();
 
-            service.ingest(); // catches exception
+            given(usgsClient.fetchUpdatedAfter(firstQuery))
+                    .willReturn(new UsgsResponse(List.of(failingFeature, successFeature)));
+            doThrow(new RuntimeException("Simulated database failure"))
+                    .when(disasterEventProcessor).persistDisasterEvent(failingFeature);
+            given(disasterEventProcessor.persistDisasterEvent(successFeature)).willReturn(successId);
+
+            List<UUID> result = service.ingest();
+
+            // The successful feature's ID should be returned; the failing one is skipped
+            assertThat(result).containsExactly(successId);
 
             // Advance clock to 12:05:00
-            // Since first run threw inside try-block before 'lastSync = started',
-            // lastSync was set to 11:00:00, NOT 12:00:00!
-            // Next run still queries 11:00:00 - 2min = 10:58:00
+            // Since lastSync DID advance to 12:00:00 (per-feature catch doesn't prevent it),
+            // the next query should use 12:00:00 - 2min = 11:58:00
             clock.advance(Duration.ofMinutes(5));
+            Instant secondQuery = Instant.parse("2026-10-08T11:58:00Z");
+            given(usgsClient.fetchUpdatedAfter(secondQuery))
+                    .willReturn(new UsgsResponse(List.of()));
+
             service.ingest();
 
-            // fetchUpdatedAfter(10:58:00) was called twice
-            then(usgsClient).should(times(2)).fetchUpdatedAfter(firstQuery);
+            then(usgsClient).should().fetchUpdatedAfter(secondQuery);
         }
     }
 
@@ -205,9 +365,10 @@ class UsgsEarthquakeIngestionServiceTest {
         void handlesNullResponseGracefully() {
             given(usgsClient.fetchUpdatedAfter(any())).willReturn(null);
 
-            service.ingest();
+            List<UUID> result = service.ingest();
 
             then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
 
             // Check that lastSync advanced to 12:00:00 by verifying next run uses 11:58:00
             clock.advance(Duration.ofMinutes(5));
@@ -224,9 +385,10 @@ class UsgsEarthquakeIngestionServiceTest {
         void handlesNullFeaturesInResponse() {
             given(usgsClient.fetchUpdatedAfter(any())).willReturn(new UsgsResponse(null));
 
-            service.ingest();
+            List<UUID> result = service.ingest();
 
             then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
         }
 
         @Test
@@ -234,9 +396,10 @@ class UsgsEarthquakeIngestionServiceTest {
         void handlesEmptyFeaturesInResponse() {
             given(usgsClient.fetchUpdatedAfter(any())).willReturn(new UsgsResponse(List.of()));
 
-            service.ingest();
+            List<UUID> result = service.ingest();
 
             then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
         }
     }
 }
