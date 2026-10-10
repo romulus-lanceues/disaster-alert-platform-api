@@ -121,10 +121,10 @@ class AlertMatchingRepositoryTest {
         UUID eventId = disasterEventProcessor.persistDisasterEvent(feature);
         assertThat(eventId).isNotNull();
 
-        List<CreatedAlerts> createdAlerts = alertMatchingRepository.persistAlert(List.of(eventId));
+        List<CreatedAlert> createdAlerts = alertMatchingRepository.persistAlert(List.of(eventId));
 
         assertThat(createdAlerts).hasSize(1);
-        CreatedAlerts alert = createdAlerts.getFirst();
+        CreatedAlert alert = createdAlerts.getFirst();
         assertThat(alert.disasterEventId()).isEqualTo(eventId);
         assertThat(alert.alertRuleId()).isEqualTo(baseRule.getId());
         assertThat(alert.id()).isNotNull();
@@ -140,11 +140,11 @@ class AlertMatchingRepositoryTest {
         UUID eventId = disasterEventProcessor.persistDisasterEvent(feature);
 
         // First run creates 1 alert
-        List<CreatedAlerts> firstRun = alertMatchingRepository.persistAlert(List.of(eventId));
+        List<CreatedAlert> firstRun = alertMatchingRepository.persistAlert(List.of(eventId));
         assertThat(firstRun).hasSize(1);
 
         // Second run with same event ID should return 0 (DO NOTHING)
-        List<CreatedAlerts> secondRun = alertMatchingRepository.persistAlert(List.of(eventId));
+        List<CreatedAlert> secondRun = alertMatchingRepository.persistAlert(List.of(eventId));
         assertThat(secondRun).isEmpty();
 
         // Database should still contain exactly 1 alert
@@ -158,7 +158,7 @@ class AlertMatchingRepositoryTest {
         UsgsFeature feature = createFeature("eq-far-1", 9.8000, 125.6000, 6.5);
         UUID eventId = disasterEventProcessor.persistDisasterEvent(feature);
 
-        List<CreatedAlerts> createdAlerts = alertMatchingRepository.persistAlert(List.of(eventId));
+        List<CreatedAlert> createdAlerts = alertMatchingRepository.persistAlert(List.of(eventId));
 
         assertThat(createdAlerts).isEmpty();
         assertThat(alertRepository.count()).isEqualTo(0);
@@ -171,7 +171,7 @@ class AlertMatchingRepositoryTest {
         UsgsFeature feature = createFeature("eq-low-mag-1", 14.6000, 120.9850, 3.5);
         UUID eventId = disasterEventProcessor.persistDisasterEvent(feature);
 
-        List<CreatedAlerts> createdAlerts = alertMatchingRepository.persistAlert(List.of(eventId));
+        List<CreatedAlert> createdAlerts = alertMatchingRepository.persistAlert(List.of(eventId));
 
         assertThat(createdAlerts).isEmpty();
         assertThat(alertRepository.count()).isEqualTo(0);
