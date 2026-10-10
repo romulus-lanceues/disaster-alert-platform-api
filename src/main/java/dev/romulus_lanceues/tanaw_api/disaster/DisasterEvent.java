@@ -71,4 +71,7 @@ public class DisasterEvent {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(name = "alert_matched_at")
+    private Instant alertMatchedAt;
+
 }

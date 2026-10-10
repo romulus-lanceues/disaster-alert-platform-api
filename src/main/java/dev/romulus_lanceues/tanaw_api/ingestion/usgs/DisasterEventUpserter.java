@@ -36,7 +36,8 @@ public class DisasterEventUpserter {
                     source_updated_at = EXCLUDED.source_updated_at,
                     severity = EXCLUDED.severity,
                     place = EXCLUDED.place,
-                    raw_payload = EXCLUDED.raw_payload
+                    raw_payload = EXCLUDED.raw_payload,
+                    alert_matched_at = NULL
                 WHERE disaster_events.source_updated_at < EXCLUDED.source_updated_at
                 RETURNING id, (xmax = 0) AS inserted
                 """;
