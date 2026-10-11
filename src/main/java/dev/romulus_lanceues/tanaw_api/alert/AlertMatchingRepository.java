@@ -5,7 +5,11 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -13,6 +17,55 @@ import java.util.UUID;
 public class AlertMatchingRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
+
+    public List<UUID> claimUnmatchedEvents(int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+
+        String sql = """
+                SELECT id
+                FROM disaster_events
+                WHERE alert_matched_at IS NULL
+                    AND disaster_type = 'EARTHQUAKE'
+                ORDER BY source_updated_at ASC
+                LIMIT :limit
+                FOR UPDATE SKIP LOCKED
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("limit", limit);
+        return jdbc.query(sql, params, (rs, i) -> rs.getObject("id", UUID.class));
+    }
+
+    public int markMatched(List<UUID> ids, Instant now) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+
+        String sql = """
+                UPDATE disaster_events
+                SET alert_matched_at = :now
+                WHERE id IN (:ids)
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("now", Timestamp.from(now))
+                .addValue("ids", ids);
+        return jdbc.update(sql, params);
+    }
+
+    public Optional<Instant> findOldestUnmatchedEventTime() {
+        String sql = """
+                SELECT MIN(source_updated_at) AS oldest
+                FROM disaster_events
+                WHERE alert_matched_at IS NULL
+                    AND disaster_type = 'EARTHQUAKE'
+                """;
+        List<Instant> result = jdbc.query(sql, (rs, i) -> {
+            Timestamp ts = rs.getTimestamp("oldest");
+            return ts != null ? ts.toInstant() : null;
+        });
+        return result.stream().filter(Objects::nonNull).findFirst();
+    }
 
     public List<CreatedAlert> persistAlert(List<UUID> persistedDisasterEvents) {
         if (persistedDisasterEvents == null || persistedDisasterEvents.isEmpty()) {

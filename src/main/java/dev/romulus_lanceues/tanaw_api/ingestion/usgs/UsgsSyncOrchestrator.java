@@ -17,20 +17,21 @@ public class UsgsSyncOrchestrator {
     private final AlertMatchingService alertMatchingService;
 
     @Scheduled(fixedDelayString = "${usgs.poll-interval}")
-    public void sync(){
-        List<UUID> persistedEventsId = ingestionService.ingest();
-
-        if(persistedEventsId.isEmpty()){
-            return;
-        }
-
-        try{
-            alertMatchingService.createAlertForEvents(persistedEventsId);
+    public void sync() {
+        try {
+            List<UUID> persistedEventsId = ingestionService.ingest();
+            if (persistedEventsId != null && !persistedEventsId.isEmpty()) {
+                log.info("USGS ingestion persisted {} event(s)", persistedEventsId.size());
+            }
         } catch (Exception e) {
-
-            log.error("Alert matching failed for events {}", persistedEventsId, e);
+            log.error("USGS ingestion failed unexpectedly during sync", e);
         }
 
+        try {
+            alertMatchingService.drainPendingEvents();
+        } catch (Exception e) {
+            log.error("Alert matching drain failed — will retry on next poll", e);
+        }
     }
 
 }
