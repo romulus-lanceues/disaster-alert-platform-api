@@ -194,6 +194,20 @@ class UsgsEarthquakeIngestionServiceTest {
         }
 
         @Test
+        @DisplayName("skips features with null type safely without throwing exception")
+        void skipsNullType() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature nullType = createNonEarthquakeFeature("us-null-type", null);
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(nullType)));
+
+            List<UUID> result = service.ingest();
+
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
+        }
+
+        @Test
         @DisplayName("skips features with null properties")
         void skipsNullProperties() {
             Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
@@ -322,10 +336,8 @@ class UsgsEarthquakeIngestionServiceTest {
         }
 
         @Test
-        @DisplayName("when processor throws for one feature, lastSync still advances and other features are processed")
-        void processorExceptionIsIsolatedPerFeatureAndLastSyncAdvances() {
-            // Per-feature try/catch means a single processor failure does NOT prevent
-            // lastSync from advancing — only usgsClient failures do.
+        @DisplayName("when processor throws for one feature, lastSync is held and retried on next poll")
+        void processorExceptionHoldsLastSync() {
             Instant firstQuery = Instant.parse("2026-10-08T10:58:00Z");
             UsgsFeature failingFeature = createEarthquakeFeature("us-fail");
             UsgsFeature successFeature = createEarthquakeFeature("us-ok");
@@ -339,20 +351,91 @@ class UsgsEarthquakeIngestionServiceTest {
 
             List<UUID> result = service.ingest();
 
-            // The successful feature's ID should be returned; the failing one is skipped
+            // The successful feature's ID should be returned; the failing one is not
             assertThat(result).containsExactly(successId);
 
             // Advance clock to 12:05:00
-            // Since lastSync DID advance to 12:00:00 (per-feature catch doesn't prevent it),
-            // the next query should use 12:00:00 - 2min = 11:58:00
+            // Because one feature failed, lastSync was held at 11:00:00 (did NOT advance to 12:00:00).
+            // Therefore, the next query must STILL query since 10:58:00 (11:00:00 - 2min)
             clock.advance(Duration.ofMinutes(5));
-            Instant secondQuery = Instant.parse("2026-10-08T11:58:00Z");
-            given(usgsClient.fetchUpdatedAfter(secondQuery))
+            given(usgsClient.fetchUpdatedAfter(firstQuery))
                     .willReturn(new UsgsResponse(List.of()));
 
             service.ingest();
 
-            then(usgsClient).should().fetchUpdatedAfter(secondQuery);
+            // firstQuery was called once in run 1 and once in run 2
+            then(usgsClient).should(times(2)).fetchUpdatedAfter(firstQuery);
+        }
+
+        @Test
+        @DisplayName("when feature fails and then succeeds on next poll, cursor advances normally")
+        void cursorAdvancesAfterFailureRecovers() {
+            Instant initialQuery = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature retryFeature = createEarthquakeFeature("us-retry");
+            UUID recoveredId = UUID.randomUUID();
+
+            // Poll 1 at 12:00:00: feature throws exception -> cursor held
+            given(usgsClient.fetchUpdatedAfter(initialQuery))
+                    .willReturn(new UsgsResponse(List.of(retryFeature)));
+            given(disasterEventProcessor.persistDisasterEvent(retryFeature))
+                    .willThrow(new RuntimeException("Transient failure"))
+                    .willReturn(recoveredId);
+
+            service.ingest();
+
+            // Poll 2 at 12:05:00: same query since cursor was held; now it succeeds!
+            clock.advance(Duration.ofMinutes(5));
+
+            List<UUID> recoveredResult = service.ingest();
+
+            assertThat(recoveredResult).containsExactly(recoveredId);
+
+            // Poll 3 at 12:10:00: cursor successfully advanced to 12:05:00, so query is 12:05:00 - 2min = 12:03:00
+            clock.advance(Duration.ofMinutes(5));
+            Instant expectedThirdQuery = Instant.parse("2026-10-08T12:03:00Z");
+            given(usgsClient.fetchUpdatedAfter(expectedThirdQuery))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedThirdQuery);
+        }
+
+        @Test
+        @DisplayName("poison guard forces lastSync advance when cursor held longer than MAX_CURSOR_LAG")
+        void poisonGuardAdvancesLastSyncAfterMaxCursorLagExceeded() {
+            Instant initialQuery = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature poisonFeature = createEarthquakeFeature("us-poison");
+
+            // Poll 1 at 12:00:00: failure starts holding cursor at 12:00:00
+            given(usgsClient.fetchUpdatedAfter(initialQuery))
+                    .willReturn(new UsgsResponse(List.of(poisonFeature)));
+            doThrow(new RuntimeException("Persistent poison failure"))
+                    .when(disasterEventProcessor).persistDisasterEvent(poisonFeature);
+
+            service.ingest();
+
+            // Poll 2 at 12:15:00: 15 minutes elapsed (< 30m MAX_CURSOR_LAG) -> cursor still held
+            clock.advance(Duration.ofMinutes(15));
+            service.ingest();
+
+            // Still querying initialQuery because cursor is held
+            then(usgsClient).should(times(2)).fetchUpdatedAfter(initialQuery);
+
+            // Poll 3 at 12:35:00: 35 minutes elapsed (>= 30m MAX_CURSOR_LAG) -> poison guard triggers!
+            // lastSync is forcibly advanced to 12:35:00
+            clock.advance(Duration.ofMinutes(20));
+            service.ingest();
+
+            // Poll 4 at 12:40:00: next poll now uses forced lastSync (12:35:00) - 2min = 12:33:00
+            clock.advance(Duration.ofMinutes(5));
+            Instant postPoisonQuery = Instant.parse("2026-10-08T12:33:00Z");
+            given(usgsClient.fetchUpdatedAfter(postPoisonQuery))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(postPoisonQuery);
         }
     }
 
