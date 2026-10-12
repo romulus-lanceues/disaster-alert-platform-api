@@ -225,4 +225,40 @@ class DisasterEventUpserterTest {
             assertThat(updatedRow.get("geom")).isEqualTo("POINT(125.456 7.192)");
         }
     }
+
+    @Nested
+    @DisplayName("findLatestSourceUpdatedAt")
+    class FindLatestSourceUpdatedAtTests {
+
+        @Test
+        @DisplayName("returns empty when no events exist for source")
+        void returnsEmptyWhenNoEventsExist() {
+            Optional<Instant> result = disasterEventUpserter.findLatestSourceUpdatedAt("USGS");
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("returns max source_updated_at when events exist for source")
+        void returnsMaxSourceUpdatedAt() {
+            Instant t1 = Instant.parse("2026-10-10T10:00:00Z");
+            Instant t2 = Instant.parse("2026-10-10T12:00:00Z");
+
+            disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "USGS", "us-1", "EARTHQUAKE", "reviewed",
+                    t1, t1, "MODERATE", "Place 1", "{}"
+            );
+            disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "USGS", "us-2", "EARTHQUAKE", "reviewed",
+                    t1, t2, "MODERATE", "Place 2", "{}"
+            );
+            disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "OTHER", "other-1", "EARTHQUAKE", "reviewed",
+                    t1, Instant.parse("2026-10-10T15:00:00Z"), "MODERATE", "Place 3", "{}"
+            );
+
+            Optional<Instant> result = disasterEventUpserter.findLatestSourceUpdatedAt("USGS");
+            assertThat(result).isPresent();
+            assertThat(result.get()).isEqualTo(t2);
+        }
+    }
 }

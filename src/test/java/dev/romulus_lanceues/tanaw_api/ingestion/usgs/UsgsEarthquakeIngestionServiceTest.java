@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -124,14 +125,15 @@ class UsgsEarthquakeIngestionServiceTest {
     class InitialExecutionTests {
 
         @Test
-        @DisplayName("initializes lastSync to now minus 1 hour and queries with 2 minute overlap buffer")
+        @DisplayName("initializes lastSync to now minus 1 hour and queries with 2 minute overlap buffer when DB is empty")
         void initializesLastSyncToMinusOneHourAndQueriesWithBuffer() {
             // Clock is 12:00:00
-            // Initial lastSync = 12:00:00 - 1h = 11:00:00
+            // DB returns empty -> Initial lastSync = 12:00:00 - 1h = 11:00:00
             // Query since = 11:00:00 - 2min = 10:58:00
             Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
             UsgsFeature f1 = createEarthquakeFeature("us1");
             UsgsFeature f2 = createEarthquakeFeature("us2");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.empty());
             given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
                     .willReturn(new UsgsResponse(List.of(f1, f2)));
 
@@ -140,6 +142,76 @@ class UsgsEarthquakeIngestionServiceTest {
             then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
             then(disasterEventProcessor).should().persistDisasterEvent(f1);
             then(disasterEventProcessor).should().persistDisasterEvent(f2);
+        }
+
+        @Test
+        @DisplayName("initializes lastSync from database when latest USGS event exists")
+        void initializesLastSyncFromDatabaseWhenLatestEventExists() {
+            // Clock is 12:00:00
+            // Latest USGS event in DB is 09:30:00 -> lastSync = 09:30:00
+            // Query since = 09:30:00 - 2min = 09:28:00
+            Instant dbLatest = Instant.parse("2026-10-08T09:30:00Z");
+            Instant expectedQuerySince = Instant.parse("2026-10-08T09:28:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.of(dbLatest));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
+        }
+
+        @Test
+        @DisplayName("caps lastSync at 24 hours max lookback when latest DB event is older")
+        void capsLastSyncAtMaxLookbackWhenDbEventIsOlderThan24Hours() {
+            // Clock is 2026-10-08T12:00:00Z
+            // DB event is 3 days old (2026-10-05T12:00:00Z)
+            // Capped at 24h: 2026-10-08T12:00:00Z - 24h = 2026-10-07T12:00:00Z
+            // Query since = 2026-10-07T12:00:00Z - 2min = 2026-10-07T11:58:00Z
+            Instant oldDbEvent = Instant.parse("2026-10-05T12:00:00Z");
+            Instant expectedQuerySince = Instant.parse("2026-10-07T11:58:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.of(oldDbEvent));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
+        }
+
+        @Test
+        @DisplayName("clamps lastSync to now when latest DB event is in the future")
+        void clampsLastSyncToNowWhenDbEventIsInFuture() {
+            // Clock is 2026-10-08T12:00:00Z
+            // DB event timestamp is 12:30:00Z (30 min in the future)
+            // Clamped to now: 12:00:00Z
+            // Query since = 12:00:00Z - 2min = 11:58:00Z
+            Instant futureDbEvent = Instant.parse("2026-10-08T12:30:00Z");
+            Instant expectedQuerySince = Instant.parse("2026-10-08T11:58:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.of(futureDbEvent));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
+        }
+
+        @Test
+        @DisplayName("falls back to default 1 hour lookback when DB query throws exception")
+        void fallsBackToDefaultLookbackWhenDbQueryFails() {
+            // Clock is 12:00:00Z
+            // DB throws exception -> falls back to 12:00:00 - 1h = 11:00:00Z
+            // Query since = 11:00:00 - 2min = 10:58:00Z
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS"))
+                    .willThrow(new RuntimeException("Database connection failure"));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
         }
 
         @Test

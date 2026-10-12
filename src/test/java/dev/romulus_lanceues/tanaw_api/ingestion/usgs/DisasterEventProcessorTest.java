@@ -165,4 +165,21 @@ class DisasterEventProcessorTest {
             );
         }
     }
+
+    @Nested
+    @DisplayName("findLatestSourceUpdatedAt")
+    class FindLatestSourceUpdatedAtTests {
+
+        @Test
+        @DisplayName("delegates to disasterEventUpserter")
+        void delegatesToUpserter() {
+            Instant expected = Instant.parse("2026-10-08T10:00:00Z");
+            given(disasterEventUpserter.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.of(expected));
+
+            Optional<Instant> result = disasterEventProcessor.findLatestSourceUpdatedAt("USGS");
+
+            assertThat(result).contains(expected);
+            then(disasterEventUpserter).should().findLatestSourceUpdatedAt("USGS");
+        }
+    }
 }
