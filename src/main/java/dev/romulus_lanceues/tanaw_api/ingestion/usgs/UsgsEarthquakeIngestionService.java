@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -19,6 +20,9 @@ import java.util.UUID;
 class UsgsEarthquakeIngestionService {
 
     private static final Duration MAX_CURSOR_LAG = Duration.ofMinutes(30);
+    private static final Duration OVERLAP_BUFFER = Duration.ofMinutes(2);
+    private static final Duration DEFAULT_LOOKBACK = Duration.ofHours(1);
+    private static final Duration MAX_LOOKBACK = Duration.ofHours(24);
 
     private final UsgsClient usgsClient;
     private final Clock clock;
@@ -29,7 +33,7 @@ class UsgsEarthquakeIngestionService {
 
     public List<UUID> ingest() {
         if (lastSync == null) {
-            lastSync = Instant.now(clock).minus(Duration.ofHours(1));
+            lastSync = initializeLastSync();
         }
 
         List<UUID> persistedEventsId = new ArrayList<>();
@@ -38,7 +42,7 @@ class UsgsEarthquakeIngestionService {
         Instant started = Instant.now(clock);
 
         try {
-            UsgsResponse response = usgsClient.fetchUpdatedAfter(lastSync.minus(Duration.ofMinutes(2)));
+            UsgsResponse response = usgsClient.fetchUpdatedAfter(lastSync.minus(OVERLAP_BUFFER));
 
             List<UsgsFeature> features = response != null && response.features() != null
                     ? response.features()
@@ -114,5 +118,35 @@ class UsgsEarthquakeIngestionService {
             log.warn("USGS ingestion encountered {} failed feature(s) {}. Cursor held at {} (held for {} / limit {}). Will retry on next poll",
                     failedFeatureIds.size(), failedFeatureIds, lastSync, heldDuration, MAX_CURSOR_LAG);
         }
+    }
+
+    private Instant initializeLastSync() {
+        Instant now = Instant.now(clock);
+        Instant earliestAllowed = now.minus(MAX_LOOKBACK);
+
+        try {
+            Optional<Instant> latestDbUpdate = disasterEventProcessor.findLatestSourceUpdatedAt("USGS");
+            if (latestDbUpdate.isPresent()) {
+                Instant maxUpdatedAt = latestDbUpdate.get();
+                if (maxUpdatedAt.isBefore(earliestAllowed)) {
+                    log.warn("Latest USGS event in database ({}) is older than max lookback ({}). Capping lastSync to {}",
+                            maxUpdatedAt, MAX_LOOKBACK, earliestAllowed);
+                    return earliestAllowed;
+                }
+                if (maxUpdatedAt.isAfter(now)) {
+                    log.warn("Latest USGS event in database ({}) is in the future. Clamping lastSync to now ({})",
+                            maxUpdatedAt, now);
+                    return now;
+                }
+                log.info("Initialized lastSync from database to {} (latest USGS event)", maxUpdatedAt);
+                return maxUpdatedAt;
+            }
+        } catch (Exception ex) {
+            log.error("Failed to query latest USGS event from database — falling back to default lookback", ex);
+        }
+
+        Instant fallback = now.minus(DEFAULT_LOOKBACK);
+        log.info("No prior USGS events found in database; initializing lastSync to default lookback {}", fallback);
+        return fallback;
     }
 }
