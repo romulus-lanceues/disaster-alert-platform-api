@@ -52,3 +52,4 @@ alert:
   matching:
     batch-size: 200
     backlog-warn-age: PT10M
+    max-batches-per-drain: 10

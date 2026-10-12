@@ -28,13 +28,15 @@ public class AlertMatchingService {
      * in its own short transaction through AlertBatchMatcher.
      */
     public DrainResult drainPendingEvents() {
-        int batchSize = properties != null ? properties.batchSize() : 200;
+        int batchSize = properties.batchSize();
+        int maxBatches = properties.maxBatchesPerDrain();
         int totalBatches = 0;
         int totalClaimed = 0;
         int totalAlertsCreated = 0;
         List<CreatedAlert> allCreatedAlerts = new ArrayList<>();
 
-        while (true) {
+        boolean reachedCap = false;
+        while (totalBatches < maxBatches) {
             BatchMatchResult batchResult = batchMatcher.matchBatch(batchSize);
             if (batchResult.claimedCount() == 0) {
                 break;
@@ -48,6 +50,15 @@ public class AlertMatchingService {
             if (batchResult.claimedCount() < batchSize) {
                 break;
             }
+
+            if (totalBatches == maxBatches) {
+                reachedCap = true;
+            }
+        }
+
+        if (reachedCap) {
+            log.info("Alert matching reached max batches per drain cap ({}); remaining events will drain on next tick",
+                    maxBatches);
         }
 
         if (totalClaimed > 0) {
@@ -66,7 +77,7 @@ public class AlertMatchingService {
             if (oldest.isPresent()) {
                 Instant now = Instant.now(clock);
                 Duration age = Duration.between(oldest.get(), now);
-                Duration warnThreshold = properties != null ? properties.backlogWarnAge() : Duration.ofMinutes(10);
+                Duration warnThreshold = properties.backlogWarnAge();
                 if (age.compareTo(warnThreshold) > 0) {
                     log.warn("Oldest unmatched disaster event is lagging by {} seconds (threshold: {}s, source_updated_at: {})",
                             age.toSeconds(), warnThreshold.toSeconds(), oldest.get());

@@ -34,7 +34,7 @@ class AlertMatchingServiceTest {
 
     private final Instant fixedNow = Instant.parse("2026-10-11T12:00:00Z");
     private final Clock clock = Clock.fixed(fixedNow, ZoneOffset.UTC);
-    private final AlertMatchingProperties properties = new AlertMatchingProperties(200, Duration.ofMinutes(10));
+    private final AlertMatchingProperties properties = new AlertMatchingProperties(200, Duration.ofMinutes(10), 10);
 
     private AlertMatchingService alertMatchingService;
 
@@ -86,6 +86,37 @@ class AlertMatchingServiceTest {
 
             assertThat(result.batchesProcessed()).isEqualTo(2);
             assertThat(result.eventsClaimed()).isEqualTo(250);
+            assertThat(result.alertsCreated()).isEqualTo(2);
+            assertThat(result.createdAlerts()).containsExactly(alert1, alert2);
+
+            then(batchMatcher).should(times(2)).matchBatch(200);
+        }
+
+        @Test
+        @DisplayName("stops draining when maxBatchesPerDrain cap is reached even if batches are full")
+        void stopsDrainingWhenMaxBatchesPerDrainReached() {
+            AlertMatchingProperties cappedProperties = new AlertMatchingProperties(200, Duration.ofMinutes(10), 2);
+            AlertMatchingService cappedService = new AlertMatchingService(batchMatcher, repository, cappedProperties, clock);
+
+            UUID alert1Id = UUID.randomUUID();
+            UUID alert2Id = UUID.randomUUID();
+            UUID event1Id = UUID.randomUUID();
+            UUID event2Id = UUID.randomUUID();
+            UUID ruleId = UUID.randomUUID();
+
+            CreatedAlert alert1 = new CreatedAlert(alert1Id, ruleId, event1Id);
+            CreatedAlert alert2 = new CreatedAlert(alert2Id, ruleId, event2Id);
+
+            BatchMatchResult batch1 = new BatchMatchResult(200, 1, List.of(alert1));
+            BatchMatchResult batch2 = new BatchMatchResult(200, 1, List.of(alert2));
+
+            given(batchMatcher.matchBatch(200)).willReturn(batch1, batch2);
+            given(repository.findOldestUnmatchedEventTime()).willReturn(Optional.empty());
+
+            DrainResult result = cappedService.drainPendingEvents();
+
+            assertThat(result.batchesProcessed()).isEqualTo(2);
+            assertThat(result.eventsClaimed()).isEqualTo(400);
             assertThat(result.alertsCreated()).isEqualTo(2);
             assertThat(result.createdAlerts()).containsExactly(alert1, alert2);
 
