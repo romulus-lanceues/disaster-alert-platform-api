@@ -5,6 +5,11 @@ spring:
   application:
     name: tanaw-api
 
+  task:
+    scheduling:
+      pool:
+        size: 4
+
   datasource:
     url: ${DB_URL}
     username: ${POSTGRES_USER}
