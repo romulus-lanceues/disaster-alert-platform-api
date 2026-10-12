@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -34,6 +35,7 @@ class UsgsClientTest {
     private final AtomicReference<URI> capturedUri = new AtomicReference<>();
     private final AtomicReference<String> responseBody = new AtomicReference<>("");
     private final AtomicReference<Integer> responseCode = new AtomicReference<>(200);
+    private final AtomicReference<Duration> responseDelay = new AtomicReference<>(Duration.ZERO);
 
     @BeforeEach
     void setUp() throws IOException {
@@ -41,6 +43,14 @@ class UsgsClientTest {
         server.createContext("/query", new HttpHandler() {
             @Override
             public void handle(HttpExchange exchange) throws IOException {
+                Duration delay = responseDelay.get();
+                if (delay != null && !delay.isZero()) {
+                    try {
+                        Thread.sleep(delay.toMillis());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
                 capturedUri.set(exchange.getRequestURI());
                 byte[] responseBytes = responseBody.get().getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -57,6 +67,8 @@ class UsgsClientTest {
                 "http://localhost:" + port,
                 4.5,
                 Duration.ofMinutes(5),
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(20),
                 new UsgsProperties.BoundingBox(4.0, 21.5, 116.0, 127.0)
         );
 
@@ -68,6 +80,7 @@ class UsgsClientTest {
         if (server != null) {
             server.stop(0);
         }
+        responseDelay.set(Duration.ZERO);
     }
 
     @Nested
@@ -186,6 +199,27 @@ class UsgsClientTest {
 
             assertThatThrownBy(() -> usgsClient.fetchUpdatedAfter(since))
                     .isInstanceOf(RestClientResponseException.class);
+        }
+
+        @Test
+        @DisplayName("throws ResourceAccessException when request times out")
+        void throwsResourceAccessExceptionOnTimeout() {
+            int port = server.getAddress().getPort();
+            UsgsProperties timeoutProperties = new UsgsProperties(
+                    "http://localhost:" + port,
+                    4.5,
+                    Duration.ofMinutes(5),
+                    Duration.ofMillis(200),
+                    Duration.ofMillis(200),
+                    new UsgsProperties.BoundingBox(4.0, 21.5, 116.0, 127.0)
+            );
+            UsgsClient timeoutClient = new UsgsClient(objectMapper, timeoutProperties);
+
+            responseDelay.set(Duration.ofMillis(600));
+            Instant since = Instant.parse("2026-10-08T10:00:00Z");
+
+            assertThatThrownBy(() -> timeoutClient.fetchUpdatedAfter(since))
+                    .isInstanceOf(ResourceAccessException.class);
         }
     }
 }

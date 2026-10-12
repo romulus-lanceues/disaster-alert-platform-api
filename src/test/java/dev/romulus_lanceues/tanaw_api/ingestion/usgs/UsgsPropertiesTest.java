@@ -34,6 +34,8 @@ class UsgsPropertiesTest {
                 "https://earthquake.usgs.gov/fdsnws/event/1",
                 4.5,
                 Duration.ofMinutes(5),
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(20),
                 validBoundingBox()
         );
     }
@@ -55,7 +57,7 @@ class UsgsPropertiesTest {
         @DisplayName("null baseUrl violates @NotBlank")
         void nullBaseUrlFails() {
             UsgsProperties properties = new UsgsProperties(
-                    null, 4.5, Duration.ofMinutes(5), validBoundingBox()
+                    null, 4.5, Duration.ofMinutes(5), Duration.ofSeconds(5), Duration.ofSeconds(20), validBoundingBox()
             );
 
             Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
@@ -70,7 +72,7 @@ class UsgsPropertiesTest {
         @DisplayName("blank baseUrl violates @NotBlank")
         void blankBaseUrlFails(String blankUrl) {
             UsgsProperties properties = new UsgsProperties(
-                    blankUrl, 4.5, Duration.ofMinutes(5), validBoundingBox()
+                    blankUrl, 4.5, Duration.ofMinutes(5), Duration.ofSeconds(5), Duration.ofSeconds(20), validBoundingBox()
             );
 
             Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
@@ -89,7 +91,7 @@ class UsgsPropertiesTest {
         @DisplayName("null minMagnitude violates @NotNull")
         void nullMinMagnitudeFails() {
             UsgsProperties properties = new UsgsProperties(
-                    "https://earthquake.usgs.gov", null, Duration.ofMinutes(5), validBoundingBox()
+                    "https://earthquake.usgs.gov", null, Duration.ofMinutes(5), Duration.ofSeconds(5), Duration.ofSeconds(20), validBoundingBox()
             );
 
             Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
@@ -104,7 +106,7 @@ class UsgsPropertiesTest {
         @DisplayName("zero or negative minMagnitude violates @Positive")
         void nonPositiveMinMagnitudeFails(double invalidMag) {
             UsgsProperties properties = new UsgsProperties(
-                    "https://earthquake.usgs.gov", invalidMag, Duration.ofMinutes(5), validBoundingBox()
+                    "https://earthquake.usgs.gov", invalidMag, Duration.ofMinutes(5), Duration.ofSeconds(5), Duration.ofSeconds(20), validBoundingBox()
             );
 
             Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
@@ -123,7 +125,7 @@ class UsgsPropertiesTest {
         @DisplayName("null pollInterval violates @NotNull")
         void nullPollIntervalFails() {
             UsgsProperties properties = new UsgsProperties(
-                    "https://earthquake.usgs.gov", 4.5, null, validBoundingBox()
+                    "https://earthquake.usgs.gov", 4.5, null, Duration.ofSeconds(5), Duration.ofSeconds(20), validBoundingBox()
             );
 
             Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
@@ -135,6 +137,44 @@ class UsgsPropertiesTest {
     }
 
     @Nested
+    @DisplayName("connectTimeout validation")
+    class ConnectTimeoutValidation {
+
+        @Test
+        @DisplayName("null connectTimeout violates @NotNull")
+        void nullConnectTimeoutFails() {
+            UsgsProperties properties = new UsgsProperties(
+                    "https://earthquake.usgs.gov", 4.5, Duration.ofMinutes(5), null, Duration.ofSeconds(20), validBoundingBox()
+            );
+
+            Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
+
+            assertThat(violations)
+                    .extracting(v -> v.getPropertyPath().toString())
+                    .contains("connectTimeout");
+        }
+    }
+
+    @Nested
+    @DisplayName("readTimeout validation")
+    class ReadTimeoutValidation {
+
+        @Test
+        @DisplayName("null readTimeout violates @NotNull")
+        void nullReadTimeoutFails() {
+            UsgsProperties properties = new UsgsProperties(
+                    "https://earthquake.usgs.gov", 4.5, Duration.ofMinutes(5), Duration.ofSeconds(5), null, validBoundingBox()
+            );
+
+            Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
+
+            assertThat(violations)
+                    .extracting(v -> v.getPropertyPath().toString())
+                    .contains("readTimeout");
+        }
+    }
+
+    @Nested
     @DisplayName("boundingBox validation")
     class BoundingBoxValidation {
 
@@ -142,7 +182,7 @@ class UsgsPropertiesTest {
         @DisplayName("null boundingBox violates @NotNull")
         void nullBoundingBoxFails() {
             UsgsProperties properties = new UsgsProperties(
-                    "https://earthquake.usgs.gov", 4.5, Duration.ofMinutes(5), null
+                    "https://earthquake.usgs.gov", 4.5, Duration.ofMinutes(5), Duration.ofSeconds(5), Duration.ofSeconds(20), null
             );
 
             Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
@@ -159,7 +199,7 @@ class UsgsPropertiesTest {
                     null, 21.5, 116.0, 127.0
             );
             UsgsProperties properties = new UsgsProperties(
-                    "https://earthquake.usgs.gov", 4.5, Duration.ofMinutes(5), invalidBox
+                    "https://earthquake.usgs.gov", 4.5, Duration.ofMinutes(5), Duration.ofSeconds(5), Duration.ofSeconds(20), invalidBox
             );
 
             Set<ConstraintViolation<UsgsProperties>> violations = validator.validate(properties);
