@@ -47,6 +47,8 @@ usgs:
   base-url: https://earthquake.usgs.gov/fdsnws/event/1
   min-magnitude: 1.0
   poll-interval: PT1M
+  connect-timeout: PT5S
+  read-timeout: PT20S
   bounding-box:
     min-latitude: 4.0
     max-latitude: 21.5
