@@ -50,6 +50,23 @@ class UsgsClient {
                             .queryParam("updatedafter", since.toString())
                             .queryParam("minmagnitude", minMag)
                             .queryParam("orderby", "time");
+
+                    if (properties.boundingBox() != null) {
+                        var box = properties.boundingBox();
+                        if (box.minLatitude() != null) {
+                            builder.queryParam("minlatitude", box.minLatitude());
+                        }
+                        if (box.maxLatitude() != null) {
+                            builder.queryParam("maxlatitude", box.maxLatitude());
+                        }
+                        if (box.minLongitude() != null) {
+                            builder.queryParam("minlongitude", box.minLongitude());
+                        }
+                        if (box.maxLongitude() != null) {
+                            builder.queryParam("maxlongitude", box.maxLongitude());
+                        }
+                    }
+
                     return builder.build();
                 })
                 .retrieve()
