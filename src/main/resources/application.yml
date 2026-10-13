@@ -60,3 +60,22 @@ alert:
     batch-size: 200
     backlog-warn-age: PT10M
     max-batches-per-drain: 10
+
+notification:
+  dry-run: true
+  dispatcher:
+    enabled: true
+    interval: PT5S
+    batch-size: 50
+    lease: PT2M
+  retry:
+    max-attempts: 5
+    initial-backoff: PT10S
+    max-backoff: PT10M
+  fanout:
+    max-event-age: PT6H
+  discord:
+    connect-timeout: PT3S
+    read-timeout: PT10S
+  crypto:
+    key: ${NOTIFICATION_CRYPTO_KEY:}
