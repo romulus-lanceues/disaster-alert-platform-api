@@ -127,7 +127,11 @@ class UsgsClientTest {
                     .contains("format=geojson")
                     .contains("updatedafter=2026-10-08T10:00:00Z")
                     .contains("minmagnitude=4.5")
-                    .contains("orderby=time");
+                    .contains("orderby=time")
+                    .contains("minlatitude=4.0")
+                    .contains("maxlatitude=21.5")
+                    .contains("minlongitude=116.0")
+                    .contains("maxlongitude=127.0");
 
             assertThat(response).isNotNull();
             assertThat(response.features()).hasSize(1);
@@ -152,6 +156,56 @@ class UsgsClientTest {
 
             URI uri = capturedUri.get();
             assertThat(uri.getQuery()).contains("minmagnitude=6.0");
+        }
+
+        @Test
+        @DisplayName("omits bounding box parameters when bounding box is null")
+        void omitsBoundingBoxParametersWhenNull() {
+            int port = server.getAddress().getPort();
+            UsgsProperties noBoxProperties = new UsgsProperties(
+                    "http://localhost:" + port,
+                    4.5,
+                    Duration.ofMinutes(5),
+                    Duration.ofSeconds(5),
+                    Duration.ofSeconds(20),
+                    null
+            );
+            UsgsClient clientWithoutBox = new UsgsClient(objectMapper, noBoxProperties);
+            responseBody.set("{\"type\":\"FeatureCollection\",\"features\":[]}");
+
+            clientWithoutBox.fetchUpdatedAfter(Instant.parse("2026-10-08T10:00:00Z"));
+
+            URI uri = capturedUri.get();
+            assertThat(uri.getQuery())
+                    .doesNotContain("minlatitude")
+                    .doesNotContain("maxlatitude")
+                    .doesNotContain("minlongitude")
+                    .doesNotContain("maxlongitude");
+        }
+
+        @Test
+        @DisplayName("includes only non-null bounding box parameters")
+        void includesOnlyNonNullBoundingBoxParameters() {
+            int port = server.getAddress().getPort();
+            UsgsProperties partialBoxProperties = new UsgsProperties(
+                    "http://localhost:" + port,
+                    4.5,
+                    Duration.ofMinutes(5),
+                    Duration.ofSeconds(5),
+                    Duration.ofSeconds(20),
+                    new UsgsProperties.BoundingBox(4.0, null, 116.0, null)
+            );
+            UsgsClient clientWithPartialBox = new UsgsClient(objectMapper, partialBoxProperties);
+            responseBody.set("{\"type\":\"FeatureCollection\",\"features\":[]}");
+
+            clientWithPartialBox.fetchUpdatedAfter(Instant.parse("2026-10-08T10:00:00Z"));
+
+            URI uri = capturedUri.get();
+            assertThat(uri.getQuery())
+                    .contains("minlatitude=4.0")
+                    .doesNotContain("maxlatitude")
+                    .contains("minlongitude=116.0")
+                    .doesNotContain("maxlongitude");
         }
 
         @Test
