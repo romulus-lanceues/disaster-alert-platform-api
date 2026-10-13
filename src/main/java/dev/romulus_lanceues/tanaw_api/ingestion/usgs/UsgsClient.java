@@ -3,11 +3,13 @@ package dev.romulus_lanceues.tanaw_api.ingestion.usgs;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UsgsFeature;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UsgsResponse;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.net.http.HttpClient;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,8 +25,16 @@ class UsgsClient {
     UsgsClient(ObjectMapper objectMapper, UsgsProperties properties) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.connectTimeout())
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(properties.readTimeout());
+
         this.restClient = RestClient.builder()
                 .baseUrl(properties.baseUrl())
+                .requestFactory(requestFactory)
                 .build();
     }
 
@@ -40,6 +50,23 @@ class UsgsClient {
                             .queryParam("updatedafter", since.toString())
                             .queryParam("minmagnitude", minMag)
                             .queryParam("orderby", "time");
+
+                    if (properties.boundingBox() != null) {
+                        var box = properties.boundingBox();
+                        if (box.minLatitude() != null) {
+                            builder.queryParam("minlatitude", box.minLatitude());
+                        }
+                        if (box.maxLatitude() != null) {
+                            builder.queryParam("maxlatitude", box.maxLatitude());
+                        }
+                        if (box.minLongitude() != null) {
+                            builder.queryParam("minlongitude", box.minLongitude());
+                        }
+                        if (box.maxLongitude() != null) {
+                            builder.queryParam("maxlongitude", box.maxLongitude());
+                        }
+                    }
+
                     return builder.build();
                 })
                 .retrieve()

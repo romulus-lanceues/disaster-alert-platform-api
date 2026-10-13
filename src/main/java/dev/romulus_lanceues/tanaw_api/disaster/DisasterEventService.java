@@ -20,34 +20,6 @@ public class DisasterEventService {
 
     private final DisasterEventRepository disasterEventRepository;
 
-    @Transactional
-    public DisasterEvent createDisasterEvent(DisasterEventRequest request) {
-        log.info("Creating disaster event from source '{}' with external ID '{}'",
-                request.source(), request.externalId());
-
-        if (disasterEventRepository.existsBySourceAndExternalId(request.source(), request.externalId())) {
-            throw new DisasterEventAlreadyExistsException(
-                    "Disaster event already exists for source '%s' with external ID '%s'"
-                            .formatted(request.source(), request.externalId()));
-        }
-
-        Instant occurredAt = request.occurredAt() != null ? request.occurredAt() : Instant.now();
-
-        DisasterEvent disasterEvent = DisasterEvent.builder()
-                .source(request.source())
-                .externalId(request.externalId())
-                .disasterType(request.disasterType())
-                .occurredAt(occurredAt)
-                .status(request.status())
-                .sourceUpdatedAt(request.sourceUpdatedAt())
-                .place(request.place())
-                .severity(request.severity())
-                .rawPayload(request.rawPayload())
-                .build();
-
-        return disasterEventRepository.save(disasterEvent);
-    }
-
     public DisasterEvent getDisasterEvent(UUID id) {
         log.info("Fetching disaster event with ID {}", id);
 

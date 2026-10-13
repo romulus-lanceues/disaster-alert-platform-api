@@ -36,7 +36,8 @@ public class DisasterEventUpserter {
                     source_updated_at = EXCLUDED.source_updated_at,
                     severity = EXCLUDED.severity,
                     place = EXCLUDED.place,
-                    raw_payload = EXCLUDED.raw_payload
+                    raw_payload = EXCLUDED.raw_payload,
+                    alert_matched_at = NULL
                 WHERE disaster_events.source_updated_at < EXCLUDED.source_updated_at
                 RETURNING id, (xmax = 0) AS inserted
                 """;
@@ -80,6 +81,22 @@ public class DisasterEventUpserter {
         jdbc.update(sql, new MapSqlParameterSource()
                 .addValue("id", eventId).addValue("lat", lat).addValue("lon", lon)
                 .addValue("mag", mag).addValue("depth", depthKm));
+    }
+
+    Optional<Instant> findLatestSourceUpdatedAt(String source) {
+        String sql = """
+                SELECT MAX(source_updated_at)
+                FROM disaster_events
+                WHERE source = :source
+                """;
+
+        Timestamp maxUpdatedAt = jdbc.query(
+                sql,
+                new MapSqlParameterSource("source", source),
+                rs -> rs.next() ? rs.getTimestamp(1) : null
+        );
+
+        return Optional.ofNullable(maxUpdatedAt).map(Timestamp::toInstant);
     }
 
 }

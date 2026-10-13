@@ -1,125 +1,186 @@
 package dev.romulus_lanceues.tanaw_api.ingestion.usgs;
 
+import dev.romulus_lanceues.tanaw_api.auth.TestJwtFactory;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventRepository;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import dev.romulus_lanceues.tanaw_api.ingestion.usgs.dto.UpsertResult;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.jdbc.core.RowMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.List;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.mock;
 
-@ExtendWith(MockitoExtension.class)
-@DisplayName("DisasterEventUpserter Unit Tests")
+@SpringBootTest(properties = "security.jwt.secret=" + TestJwtFactory.DEFAULT_SECRET)
+@Testcontainers
+@DisplayName("DisasterEventUpserter Integration Tests")
 class DisasterEventUpserterTest {
 
-    @Mock
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer postgres = new PostgreSQLContainer(
+            DockerImageName.parse("postgis/postgis:18-3.6")
+                    .asCompatibleSubstituteFor("postgres")
+    );
+
+    @Autowired
+    private DisasterEventUpserter disasterEventUpserter;
+
+    @Autowired
+    private DisasterEventRepository disasterEventRepository;
+
+    @MockitoBean
+    private UsgsSyncOrchestrator usgsSyncOrchestrator;
+
+    @Autowired
     private NamedParameterJdbcTemplate jdbc;
 
-    @InjectMocks
-    private DisasterEventUpserter disasterEventUpserter;
+    @BeforeEach
+    void setUp() {
+        jdbc.getJdbcOperations().execute("DELETE FROM alerts");
+        jdbc.getJdbcOperations().execute("DELETE FROM earthquake");
+        jdbc.getJdbcOperations().execute("DELETE FROM disaster_events");
+    }
 
     @Nested
     @DisplayName("upsert")
     class UpsertTests {
 
         @Test
-        @DisplayName("correctly formats parameters and returns UpsertResult when row is returned")
-        void upsertFormatsParametersAndReturnsResult() {
-            UUID id = UUID.randomUUID();
-            Instant occurredAt = Instant.parse("2026-10-08T10:00:00Z");
-            Instant sourceUpdatedAt = Instant.parse("2026-10-08T10:05:00Z");
-            UpsertResult expectedResult = new UpsertResult(id, true);
-
-            given(jdbc.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
-                    .willReturn(List.of(expectedResult));
+        @DisplayName("inserts new disaster event with alert_matched_at = NULL and returns inserted = true")
+        void insertsNewEventWithNullAlertMatchedAt() {
+            UUID newId = UUID.randomUUID();
+            Instant occurredAt = Instant.parse("2026-10-10T10:00:00Z");
+            Instant sourceUpdatedAt = Instant.parse("2026-10-10T10:05:00Z");
 
             Optional<UpsertResult> result = disasterEventUpserter.upsert(
-                    id, "USGS", "us7000eq1", "EARTHQUAKE", "reviewed",
-                    occurredAt, sourceUpdatedAt, "HIGH", "Manila", "{\"raw\":1}"
-            );
-
-            assertThat(result).contains(expectedResult);
-
-            ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-            ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
-            then(jdbc).should().query(sqlCaptor.capture(), paramsCaptor.capture(), any(RowMapper.class));
-
-            String sql = sqlCaptor.getValue();
-            assertThat(sql)
-                    .contains("INSERT INTO disaster_events")
-                    .contains("ON CONFLICT (source, external_id) DO UPDATE SET")
-                    .contains("RETURNING id, (xmax = 0) AS inserted");
-
-            MapSqlParameterSource params = paramsCaptor.getValue();
-            assertThat(params.getValue("id")).isEqualTo(id);
-            assertThat(params.getValue("source")).isEqualTo("USGS");
-            assertThat(params.getValue("externalId")).isEqualTo("us7000eq1");
-            assertThat(params.getValue("type")).isEqualTo("EARTHQUAKE");
-            assertThat(params.getValue("status")).isEqualTo("reviewed");
-            assertThat(params.getValue("occurredAt")).isEqualTo(Timestamp.from(occurredAt));
-            assertThat(params.getValue("sourceUpdatedAt")).isEqualTo(Timestamp.from(sourceUpdatedAt));
-            assertThat(params.getValue("severity")).isEqualTo("HIGH");
-            assertThat(params.getValue("place")).isEqualTo("Manila");
-            assertThat(params.getValue("raw")).isEqualTo("{\"raw\":1}");
-        }
-
-        @Test
-        @DisplayName("returns empty Optional when query returns no rows (e.g. outdated payload skipped by WHERE clause)")
-        void returnsEmptyWhenNoRowsReturned() {
-            given(jdbc.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
-                    .willReturn(List.of());
-
-            Optional<UpsertResult> result = disasterEventUpserter.upsert(
-                    UUID.randomUUID(), "USGS", "us7000eq2", "EARTHQUAKE", "automatic",
-                    Instant.now(), Instant.now(), "LOW", "Cebu", "{}"
-            );
-
-            assertThat(result).isEmpty();
-        }
-
-        @Test
-        @DisplayName("correctly maps ResultSet to UpsertResult in RowMapper")
-        void rowMapperExtractsIdAndInsertedFlag() throws SQLException {
-            UUID id = UUID.randomUUID();
-            ResultSet rs = mock(ResultSet.class);
-            given(rs.getObject("id", UUID.class)).willReturn(id);
-            given(rs.getBoolean("inserted")).willReturn(false);
-
-            ArgumentCaptor<RowMapper<UpsertResult>> mapperCaptor = ArgumentCaptor.forClass(RowMapper.class);
-            given(jdbc.query(anyString(), any(MapSqlParameterSource.class), mapperCaptor.capture()))
-                    .willAnswer(invocation -> {
-                        RowMapper<UpsertResult> mapper = mapperCaptor.getValue();
-                        return List.of(mapper.mapRow(rs, 0));
-                    });
-
-            Optional<UpsertResult> result = disasterEventUpserter.upsert(
-                    id, "USGS", "us7000eq3", "EARTHQUAKE", "reviewed",
-                    Instant.now(), Instant.now(), "MODERATE", "Davao", "{}"
+                    newId, "USGS", "us7000test01", "EARTHQUAKE", "reviewed",
+                    occurredAt, sourceUpdatedAt, "HIGH", "Manila, Philippines", "{\"raw\": 1}"
             );
 
             assertThat(result).isPresent();
-            assertThat(result.get().id()).isEqualTo(id);
-            assertThat(result.get().inserted()).isFalse();
+            assertThat(result.get().id()).isEqualTo(newId);
+            assertThat(result.get().inserted()).isTrue();
+
+            DisasterEvent saved = disasterEventRepository.findById(newId).orElseThrow();
+            assertThat(saved.getSource()).isEqualTo("USGS");
+            assertThat(saved.getExternalId()).isEqualTo("us7000test01");
+            assertThat(saved.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
+            assertThat(saved.getStatus()).isEqualTo("reviewed");
+            assertThat(saved.getOccurredAt()).isEqualTo(occurredAt);
+            assertThat(saved.getSourceUpdatedAt()).isEqualTo(sourceUpdatedAt);
+            assertThat(saved.getSeverity()).isEqualTo("HIGH");
+            assertThat(saved.getPlace()).isEqualTo("Manila, Philippines");
+            assertThat(saved.getAlertMatchedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("updates existing disaster event and resets alert_matched_at to NULL on newer revision")
+        void updatesEventAndResetsAlertMatchedAtToNullOnRevision() {
+            UUID initialId = UUID.randomUUID();
+            Instant t1Occurred = Instant.parse("2026-10-10T10:00:00Z");
+            Instant t1Updated = Instant.parse("2026-10-10T10:05:00Z");
+
+            Optional<UpsertResult> initialResult = disasterEventUpserter.upsert(
+                    initialId, "USGS", "us7000test02", "EARTHQUAKE", "automatic",
+                    t1Occurred, t1Updated, "MODERATE", "Initial Place", "{\"rev\": 1}"
+            );
+            assertThat(initialResult).isPresent();
+
+            // Simulate alert matching: set alert_matched_at to a known timestamp
+            Instant matchedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+            jdbc.update(
+                    "UPDATE disaster_events SET alert_matched_at = :matchedAt WHERE id = :id",
+                    new MapSqlParameterSource()
+                            .addValue("matchedAt", Timestamp.from(matchedAt))
+                            .addValue("id", initialId)
+            );
+
+            DisasterEvent beforeRevision = disasterEventRepository.findById(initialId).orElseThrow();
+            assertThat(beforeRevision.getAlertMatchedAt()).isNotNull();
+
+            // USGS sends revision with newer source_updated_at (t2 > t1)
+            Instant t2Updated = Instant.parse("2026-10-10T10:15:00Z");
+            Optional<UpsertResult> revisionResult = disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "USGS", "us7000test02", "EARTHQUAKE", "reviewed",
+                    t1Occurred, t2Updated, "HIGH", "Revised Place", "{\"rev\": 2}"
+            );
+
+            assertThat(revisionResult).isPresent();
+            assertThat(revisionResult.get().id()).isEqualTo(initialId);
+            assertThat(revisionResult.get().inserted()).isFalse();
+
+            DisasterEvent revisedEvent = disasterEventRepository.findById(initialId).orElseThrow();
+            assertThat(revisedEvent.getAlertMatchedAt()).isNull();
+            assertThat(revisedEvent.getStatus()).isEqualTo("reviewed");
+            assertThat(revisedEvent.getSourceUpdatedAt()).isEqualTo(t2Updated);
+            assertThat(revisedEvent.getSeverity()).isEqualTo("HIGH");
+            assertThat(revisedEvent.getPlace()).isEqualTo("Revised Place");
+        }
+
+        @Test
+        @DisplayName("skips stale update and preserves alert_matched_at when source_updated_at is not newer")
+        void skipsStaleUpdateAndPreservesAlertMatchedAt() {
+            UUID initialId = UUID.randomUUID();
+            Instant t2Occurred = Instant.parse("2026-10-10T10:00:00Z");
+            Instant t2Updated = Instant.parse("2026-10-10T10:15:00Z");
+
+            disasterEventUpserter.upsert(
+                    initialId, "USGS", "us7000test03", "EARTHQUAKE", "reviewed",
+                    t2Occurred, t2Updated, "HIGH", "Current Place", "{\"rev\": 2}"
+            );
+
+            Instant matchedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+            jdbc.update(
+                    "UPDATE disaster_events SET alert_matched_at = :matchedAt WHERE id = :id",
+                    new MapSqlParameterSource()
+                            .addValue("matchedAt", Timestamp.from(matchedAt))
+                            .addValue("id", initialId)
+            );
+
+            // Stale payload with older source_updated_at (t1 < t2)
+            Instant t1Updated = Instant.parse("2026-10-10T10:05:00Z");
+            Optional<UpsertResult> staleResult = disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "USGS", "us7000test03", "EARTHQUAKE", "automatic",
+                    t2Occurred, t1Updated, "LOW", "Stale Place", "{\"rev\": 1}"
+            );
+
+            assertThat(staleResult).isEmpty();
+
+            DisasterEvent afterStale = disasterEventRepository.findById(initialId).orElseThrow();
+            assertThat(afterStale.getPlace()).isEqualTo("Current Place");
+            assertThat(afterStale.getSeverity()).isEqualTo("HIGH");
+            assertThat(afterStale.getSourceUpdatedAt()).isEqualTo(t2Updated);
+            assertThat(afterStale.getAlertMatchedAt()).isEqualTo(matchedAt);
+
+            // Duplicate payload with identical source_updated_at (t2 == t2)
+            Optional<UpsertResult> duplicateResult = disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "USGS", "us7000test03", "EARTHQUAKE", "reviewed",
+                    t2Occurred, t2Updated, "HIGH", "Current Place", "{\"rev\": 2}"
+            );
+
+            assertThat(duplicateResult).isEmpty();
+
+            DisasterEvent afterDuplicate = disasterEventRepository.findById(initialId).orElseThrow();
+            assertThat(afterDuplicate.getAlertMatchedAt()).isEqualTo(matchedAt);
         }
     }
 
@@ -128,32 +189,76 @@ class DisasterEventUpserterTest {
     class UpsertEarthquakeTests {
 
         @Test
-        @DisplayName("executes update with correct SQL and spatial parameters")
-        void upsertEarthquakeExecutesUpdate() {
+        @DisplayName("inserts and updates earthquake details with PostGIS geography point")
+        void insertsAndUpdatesEarthquakeDetails() {
             UUID eventId = UUID.randomUUID();
-            Double lat = 14.5995;
-            Double lon = 120.9842;
-            Double mag = 5.6;
-            Double depthKm = 15.2;
+            Instant now = Instant.parse("2026-10-10T10:00:00Z");
 
-            disasterEventUpserter.upsertEarthquake(eventId, lat, lon, mag, depthKm);
+            disasterEventUpserter.upsert(
+                    eventId, "USGS", "us7000test04", "EARTHQUAKE", "reviewed",
+                    now, now, "MODERATE", "Davao, Philippines", "{}"
+            );
 
-            ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-            ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
-            then(jdbc).should().update(sqlCaptor.capture(), paramsCaptor.capture());
+            disasterEventUpserter.upsertEarthquake(eventId, 7.1907, 125.4553, 5.8, 15.0);
 
-            String sql = sqlCaptor.getValue();
-            assertThat(sql)
-                    .contains("INSERT INTO earthquake")
-                    .contains("ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography")
-                    .contains("ON CONFLICT (disaster_event_id) DO UPDATE SET");
+            String querySql = """
+                    SELECT latitude, longitude, magnitude, depth_km, ST_AsText(location) AS geom
+                    FROM earthquake
+                    WHERE disaster_event_id = :id
+                    """;
+            Map<String, Object> row = jdbc.queryForMap(querySql, new MapSqlParameterSource("id", eventId));
 
-            MapSqlParameterSource params = paramsCaptor.getValue();
-            assertThat(params.getValue("id")).isEqualTo(eventId);
-            assertThat(params.getValue("lat")).isEqualTo(lat);
-            assertThat(params.getValue("lon")).isEqualTo(lon);
-            assertThat(params.getValue("mag")).isEqualTo(mag);
-            assertThat(params.getValue("depth")).isEqualTo(depthKm);
+            assertThat(row.get("latitude")).isEqualTo(7.1907);
+            assertThat(row.get("longitude")).isEqualTo(125.4553);
+            assertThat(row.get("magnitude")).isEqualTo(5.8);
+            assertThat(row.get("depth_km")).isEqualTo(15.0);
+            assertThat(row.get("geom")).isEqualTo("POINT(125.4553 7.1907)");
+
+            // Update earthquake on revision
+            disasterEventUpserter.upsertEarthquake(eventId, 7.1920, 125.4560, 6.1, 12.5);
+
+            Map<String, Object> updatedRow = jdbc.queryForMap(querySql, new MapSqlParameterSource("id", eventId));
+            assertThat(updatedRow.get("latitude")).isEqualTo(7.1920);
+            assertThat(updatedRow.get("longitude")).isEqualTo(125.4560);
+            assertThat(updatedRow.get("magnitude")).isEqualTo(6.1);
+            assertThat(updatedRow.get("depth_km")).isEqualTo(12.5);
+            assertThat(updatedRow.get("geom")).isEqualTo("POINT(125.456 7.192)");
+        }
+    }
+
+    @Nested
+    @DisplayName("findLatestSourceUpdatedAt")
+    class FindLatestSourceUpdatedAtTests {
+
+        @Test
+        @DisplayName("returns empty when no events exist for source")
+        void returnsEmptyWhenNoEventsExist() {
+            Optional<Instant> result = disasterEventUpserter.findLatestSourceUpdatedAt("USGS");
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("returns max source_updated_at when events exist for source")
+        void returnsMaxSourceUpdatedAt() {
+            Instant t1 = Instant.parse("2026-10-10T10:00:00Z");
+            Instant t2 = Instant.parse("2026-10-10T12:00:00Z");
+
+            disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "USGS", "us-1", "EARTHQUAKE", "reviewed",
+                    t1, t1, "MODERATE", "Place 1", "{}"
+            );
+            disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "USGS", "us-2", "EARTHQUAKE", "reviewed",
+                    t1, t2, "MODERATE", "Place 2", "{}"
+            );
+            disasterEventUpserter.upsert(
+                    UUID.randomUUID(), "OTHER", "other-1", "EARTHQUAKE", "reviewed",
+                    t1, Instant.parse("2026-10-10T15:00:00Z"), "MODERATE", "Place 3", "{}"
+            );
+
+            Optional<Instant> result = disasterEventUpserter.findLatestSourceUpdatedAt("USGS");
+            assertThat(result).isPresent();
+            assertThat(result.get()).isEqualTo(t2);
         }
     }
 }

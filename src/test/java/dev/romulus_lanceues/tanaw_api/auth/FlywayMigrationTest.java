@@ -128,11 +128,29 @@ class FlywayMigrationTest {
         );
 
         assertThat(versions)
-                .as("All 14 versioned migrations should have been applied successfully")
+                .as("All 15 versioned migrations should have been applied successfully")
                 .containsExactly(
                         "1", "2", "3", "4", "5", "6",
-                        "7", "8", "9", "10", "11", "12", "13", "14"
+                        "7", "8", "9", "10", "11", "12", "13", "14", "15"
                 );
+    }
+
+    @Test
+    @DisplayName("disaster_events table has alert_matched_at column from V15 migration")
+    void disasterEventsTable_hasAlertMatchedAtColumnFromV15() {
+        List<String> columns = jdbcTemplate.queryForList(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name   = 'disaster_events'
+                ORDER BY ordinal_position
+                """,
+                String.class
+        );
+
+        assertThat(columns)
+                .as("disaster_events table should contain alert_matched_at from V15 migration")
+                .contains("alert_matched_at");
     }
 
     @Test

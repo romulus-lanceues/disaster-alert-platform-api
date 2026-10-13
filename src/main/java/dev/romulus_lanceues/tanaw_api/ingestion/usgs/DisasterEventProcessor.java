@@ -52,4 +52,8 @@ public class DisasterEventProcessor {
 
         return upsertResult.id();
     }
+
+    public Optional<Instant> findLatestSourceUpdatedAt(String source) {
+        return disasterEventUpserter.findLatestSourceUpdatedAt(source);
+    }
 }

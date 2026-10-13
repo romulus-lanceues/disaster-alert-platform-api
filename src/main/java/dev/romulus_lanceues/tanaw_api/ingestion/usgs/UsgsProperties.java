@@ -15,6 +15,8 @@ record UsgsProperties(
         @NotBlank String baseUrl,
         @NotNull @Positive Double minMagnitude,
         @NotNull Duration pollInterval,
+        @NotNull Duration connectTimeout,
+        @NotNull Duration readTimeout,
         @NotNull @Valid BoundingBox boundingBox
 ) {
 

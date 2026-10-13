@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -124,14 +125,15 @@ class UsgsEarthquakeIngestionServiceTest {
     class InitialExecutionTests {
 
         @Test
-        @DisplayName("initializes lastSync to now minus 1 hour and queries with 2 minute overlap buffer")
+        @DisplayName("initializes lastSync to now minus 1 hour and queries with 2 minute overlap buffer when DB is empty")
         void initializesLastSyncToMinusOneHourAndQueriesWithBuffer() {
             // Clock is 12:00:00
-            // Initial lastSync = 12:00:00 - 1h = 11:00:00
+            // DB returns empty -> Initial lastSync = 12:00:00 - 1h = 11:00:00
             // Query since = 11:00:00 - 2min = 10:58:00
             Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
             UsgsFeature f1 = createEarthquakeFeature("us1");
             UsgsFeature f2 = createEarthquakeFeature("us2");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.empty());
             given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
                     .willReturn(new UsgsResponse(List.of(f1, f2)));
 
@@ -140,6 +142,76 @@ class UsgsEarthquakeIngestionServiceTest {
             then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
             then(disasterEventProcessor).should().persistDisasterEvent(f1);
             then(disasterEventProcessor).should().persistDisasterEvent(f2);
+        }
+
+        @Test
+        @DisplayName("initializes lastSync from database when latest USGS event exists")
+        void initializesLastSyncFromDatabaseWhenLatestEventExists() {
+            // Clock is 12:00:00
+            // Latest USGS event in DB is 09:30:00 -> lastSync = 09:30:00
+            // Query since = 09:30:00 - 2min = 09:28:00
+            Instant dbLatest = Instant.parse("2026-10-08T09:30:00Z");
+            Instant expectedQuerySince = Instant.parse("2026-10-08T09:28:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.of(dbLatest));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
+        }
+
+        @Test
+        @DisplayName("caps lastSync at 24 hours max lookback when latest DB event is older")
+        void capsLastSyncAtMaxLookbackWhenDbEventIsOlderThan24Hours() {
+            // Clock is 2026-10-08T12:00:00Z
+            // DB event is 3 days old (2026-10-05T12:00:00Z)
+            // Capped at 24h: 2026-10-08T12:00:00Z - 24h = 2026-10-07T12:00:00Z
+            // Query since = 2026-10-07T12:00:00Z - 2min = 2026-10-07T11:58:00Z
+            Instant oldDbEvent = Instant.parse("2026-10-05T12:00:00Z");
+            Instant expectedQuerySince = Instant.parse("2026-10-07T11:58:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.of(oldDbEvent));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
+        }
+
+        @Test
+        @DisplayName("clamps lastSync to now when latest DB event is in the future")
+        void clampsLastSyncToNowWhenDbEventIsInFuture() {
+            // Clock is 2026-10-08T12:00:00Z
+            // DB event timestamp is 12:30:00Z (30 min in the future)
+            // Clamped to now: 12:00:00Z
+            // Query since = 12:00:00Z - 2min = 11:58:00Z
+            Instant futureDbEvent = Instant.parse("2026-10-08T12:30:00Z");
+            Instant expectedQuerySince = Instant.parse("2026-10-08T11:58:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS")).willReturn(Optional.of(futureDbEvent));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
+        }
+
+        @Test
+        @DisplayName("falls back to default 1 hour lookback when DB query throws exception")
+        void fallsBackToDefaultLookbackWhenDbQueryFails() {
+            // Clock is 12:00:00Z
+            // DB throws exception -> falls back to 12:00:00 - 1h = 11:00:00Z
+            // Query since = 11:00:00 - 2min = 10:58:00Z
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            given(disasterEventProcessor.findLatestSourceUpdatedAt("USGS"))
+                    .willThrow(new RuntimeException("Database connection failure"));
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedQuerySince);
         }
 
         @Test
@@ -186,6 +258,20 @@ class UsgsEarthquakeIngestionServiceTest {
             UsgsFeature nonEq = createNonEarthquakeFeature("us-explosion", "explosion");
             given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
                     .willReturn(new UsgsResponse(List.of(nonEq)));
+
+            List<UUID> result = service.ingest();
+
+            then(disasterEventProcessor).should(never()).persistDisasterEvent(any());
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("skips features with null type safely without throwing exception")
+        void skipsNullType() {
+            Instant expectedQuerySince = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature nullType = createNonEarthquakeFeature("us-null-type", null);
+            given(usgsClient.fetchUpdatedAfter(expectedQuerySince))
+                    .willReturn(new UsgsResponse(List.of(nullType)));
 
             List<UUID> result = service.ingest();
 
@@ -322,10 +408,8 @@ class UsgsEarthquakeIngestionServiceTest {
         }
 
         @Test
-        @DisplayName("when processor throws for one feature, lastSync still advances and other features are processed")
-        void processorExceptionIsIsolatedPerFeatureAndLastSyncAdvances() {
-            // Per-feature try/catch means a single processor failure does NOT prevent
-            // lastSync from advancing — only usgsClient failures do.
+        @DisplayName("when processor throws for one feature, lastSync is held and retried on next poll")
+        void processorExceptionHoldsLastSync() {
             Instant firstQuery = Instant.parse("2026-10-08T10:58:00Z");
             UsgsFeature failingFeature = createEarthquakeFeature("us-fail");
             UsgsFeature successFeature = createEarthquakeFeature("us-ok");
@@ -339,20 +423,91 @@ class UsgsEarthquakeIngestionServiceTest {
 
             List<UUID> result = service.ingest();
 
-            // The successful feature's ID should be returned; the failing one is skipped
+            // The successful feature's ID should be returned; the failing one is not
             assertThat(result).containsExactly(successId);
 
             // Advance clock to 12:05:00
-            // Since lastSync DID advance to 12:00:00 (per-feature catch doesn't prevent it),
-            // the next query should use 12:00:00 - 2min = 11:58:00
+            // Because one feature failed, lastSync was held at 11:00:00 (did NOT advance to 12:00:00).
+            // Therefore, the next query must STILL query since 10:58:00 (11:00:00 - 2min)
             clock.advance(Duration.ofMinutes(5));
-            Instant secondQuery = Instant.parse("2026-10-08T11:58:00Z");
-            given(usgsClient.fetchUpdatedAfter(secondQuery))
+            given(usgsClient.fetchUpdatedAfter(firstQuery))
                     .willReturn(new UsgsResponse(List.of()));
 
             service.ingest();
 
-            then(usgsClient).should().fetchUpdatedAfter(secondQuery);
+            // firstQuery was called once in run 1 and once in run 2
+            then(usgsClient).should(times(2)).fetchUpdatedAfter(firstQuery);
+        }
+
+        @Test
+        @DisplayName("when feature fails and then succeeds on next poll, cursor advances normally")
+        void cursorAdvancesAfterFailureRecovers() {
+            Instant initialQuery = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature retryFeature = createEarthquakeFeature("us-retry");
+            UUID recoveredId = UUID.randomUUID();
+
+            // Poll 1 at 12:00:00: feature throws exception -> cursor held
+            given(usgsClient.fetchUpdatedAfter(initialQuery))
+                    .willReturn(new UsgsResponse(List.of(retryFeature)));
+            given(disasterEventProcessor.persistDisasterEvent(retryFeature))
+                    .willThrow(new RuntimeException("Transient failure"))
+                    .willReturn(recoveredId);
+
+            service.ingest();
+
+            // Poll 2 at 12:05:00: same query since cursor was held; now it succeeds!
+            clock.advance(Duration.ofMinutes(5));
+
+            List<UUID> recoveredResult = service.ingest();
+
+            assertThat(recoveredResult).containsExactly(recoveredId);
+
+            // Poll 3 at 12:10:00: cursor successfully advanced to 12:05:00, so query is 12:05:00 - 2min = 12:03:00
+            clock.advance(Duration.ofMinutes(5));
+            Instant expectedThirdQuery = Instant.parse("2026-10-08T12:03:00Z");
+            given(usgsClient.fetchUpdatedAfter(expectedThirdQuery))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(expectedThirdQuery);
+        }
+
+        @Test
+        @DisplayName("poison guard forces lastSync advance when cursor held longer than MAX_CURSOR_LAG")
+        void poisonGuardAdvancesLastSyncAfterMaxCursorLagExceeded() {
+            Instant initialQuery = Instant.parse("2026-10-08T10:58:00Z");
+            UsgsFeature poisonFeature = createEarthquakeFeature("us-poison");
+
+            // Poll 1 at 12:00:00: failure starts holding cursor at 12:00:00
+            given(usgsClient.fetchUpdatedAfter(initialQuery))
+                    .willReturn(new UsgsResponse(List.of(poisonFeature)));
+            doThrow(new RuntimeException("Persistent poison failure"))
+                    .when(disasterEventProcessor).persistDisasterEvent(poisonFeature);
+
+            service.ingest();
+
+            // Poll 2 at 12:15:00: 15 minutes elapsed (< 30m MAX_CURSOR_LAG) -> cursor still held
+            clock.advance(Duration.ofMinutes(15));
+            service.ingest();
+
+            // Still querying initialQuery because cursor is held
+            then(usgsClient).should(times(2)).fetchUpdatedAfter(initialQuery);
+
+            // Poll 3 at 12:35:00: 35 minutes elapsed (>= 30m MAX_CURSOR_LAG) -> poison guard triggers!
+            // lastSync is forcibly advanced to 12:35:00
+            clock.advance(Duration.ofMinutes(20));
+            service.ingest();
+
+            // Poll 4 at 12:40:00: next poll now uses forced lastSync (12:35:00) - 2min = 12:33:00
+            clock.advance(Duration.ofMinutes(5));
+            Instant postPoisonQuery = Instant.parse("2026-10-08T12:33:00Z");
+            given(usgsClient.fetchUpdatedAfter(postPoisonQuery))
+                    .willReturn(new UsgsResponse(List.of()));
+
+            service.ingest();
+
+            then(usgsClient).should().fetchUpdatedAfter(postPoisonQuery);
         }
     }
 

@@ -4,7 +4,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -20,11 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DisasterEventService Tests")
@@ -50,102 +45,6 @@ class DisasterEventServiceTest {
                 .place("25 km NW of Manila, Philippines")
                 .severity("HIGH")
                 .build();
-    }
-
-
-    @Nested
-    @DisplayName("createDisasterEvent")
-    class CreateDisasterEvent {
-
-        @Test
-        @DisplayName("should create and return disaster event when source and externalId do not exist")
-        void shouldCreateAndReturnDisasterEvent_whenNotExists() {
-
-            Instant occurredAt = Instant.now();
-            Instant sourceUpdatedAt = occurredAt.plusSeconds(60);
-
-            DisasterEventRequest request = new DisasterEventRequest(
-                    "USGS", "usgs-001", DisasterType.EARTHQUAKE,
-                    occurredAt, "automatic", sourceUpdatedAt,
-                    "25 km NW of Manila", "HIGH", null);
-
-            DisasterEvent saved = buildDisasterEvent(UUID.randomUUID(), "USGS", "usgs-001",
-                    DisasterType.EARTHQUAKE);
-
-            given(disasterEventRepository.existsBySourceAndExternalId("USGS", "usgs-001"))
-                    .willReturn(false);
-            given(disasterEventRepository.save(any(DisasterEvent.class))).willReturn(saved);
-
-            DisasterEvent result = disasterEventService.createDisasterEvent(request);
-
-            assertThat(result).isNotNull();
-            assertThat(result).isEqualTo(saved);
-
-            ArgumentCaptor<DisasterEvent> captor = ArgumentCaptor.forClass(DisasterEvent.class);
-            verify(disasterEventRepository).save(captor.capture());
-
-            DisasterEvent createdDisasterEvent = captor.getValue();
-
-            assertThat(createdDisasterEvent.getSource()).isEqualTo("USGS");
-            assertThat(createdDisasterEvent.getExternalId()).isEqualTo("usgs-001");
-            assertThat(createdDisasterEvent.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-            assertThat(createdDisasterEvent.getOccurredAt()).isEqualTo(occurredAt);
-            assertThat(createdDisasterEvent.getStatus()).isEqualTo("automatic");
-            assertThat(createdDisasterEvent.getSourceUpdatedAt()).isEqualTo(sourceUpdatedAt);
-            assertThat(createdDisasterEvent.getPlace()).isEqualTo("25 km NW of Manila");
-            assertThat(createdDisasterEvent.getSeverity()).isEqualTo("HIGH");
-        }
-
-        @Test
-        @DisplayName("should throw DisasterEventAlreadyExistsException when event already exists")
-        void shouldThrowDisasterEventAlreadyExistsException_whenEventAlreadyExists() {
-
-            DisasterEventRequest request = new DisasterEventRequest(
-                    "USGS", "usgs-001", DisasterType.EARTHQUAKE,
-                    Instant.now(), "automatic", Instant.now(),
-                    "25 km NW of Manila", "HIGH", null);
-
-            given(disasterEventRepository.existsBySourceAndExternalId("USGS", "usgs-001"))
-                    .willReturn(true);
-
-            assertThatThrownBy(() -> disasterEventService.createDisasterEvent(request))
-                    .isInstanceOf(DisasterEventAlreadyExistsException.class)
-                    .hasMessageContaining("USGS")
-                    .hasMessageContaining("usgs-001");
-
-            then(disasterEventRepository).should(never()).save(any(DisasterEvent.class));
-        }
-
-        @Test
-        @DisplayName("should handle null occurredAt by defaulting to Instant.now()")
-        void shouldHandleNullOccurredAt_gracefully() {
-
-            DisasterEventRequest request = new DisasterEventRequest(
-                    "PAGASA", "typhoon-001", DisasterType.TYPHOON,
-                    null, null, Instant.now(),
-                    null, "MODERATE", null);
-
-            DisasterEvent saved = DisasterEvent.builder()
-                    .id(UUID.randomUUID())
-                    .source("PAGASA")
-                    .externalId("typhoon-001")
-                    .disasterType(DisasterType.TYPHOON)
-                    .occurredAt(Instant.now())
-                    .sourceUpdatedAt(Instant.now())
-                    .build();
-
-            given(disasterEventRepository.existsBySourceAndExternalId("PAGASA", "typhoon-001"))
-                    .willReturn(false);
-            given(disasterEventRepository.save(any(DisasterEvent.class))).willReturn(saved);
-
-            DisasterEvent result = disasterEventService.createDisasterEvent(request);
-
-            assertThat(result).isNotNull();
-
-            ArgumentCaptor<DisasterEvent> captor = ArgumentCaptor.forClass(DisasterEvent.class);
-            verify(disasterEventRepository).save(captor.capture());
-            assertThat(captor.getValue().getOccurredAt()).isNotNull();
-        }
     }
 
 
