@@ -37,6 +37,10 @@ public class Notification {
     @JoinColumn(name = "alert_id", nullable = false)
     private Alert alert;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "endpoint_id")
+    private NotificationEndpoint endpoint;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private NotificationChannel channel;
