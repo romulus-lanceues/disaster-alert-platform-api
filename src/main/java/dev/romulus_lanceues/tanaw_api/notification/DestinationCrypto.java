@@ -16,7 +16,6 @@ import java.util.Base64;
 import java.util.Objects;
 
 @Component
-@EnableConfigurationProperties(NotificationProperties.class)
 public class DestinationCrypto {
 
     private static final String ALGORITHM = "AES";
