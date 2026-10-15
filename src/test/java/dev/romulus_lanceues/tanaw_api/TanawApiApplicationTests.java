@@ -9,7 +9,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-@SpringBootTest(properties = "security.jwt.secret=" + TestJwtFactory.DEFAULT_SECRET)
+@SpringBootTest(properties = {
+        "security.jwt.secret=" + TestJwtFactory.DEFAULT_SECRET,
+        "notification.crypto.key=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+})
 @Testcontainers
 class TanawApiApplicationTests {
 

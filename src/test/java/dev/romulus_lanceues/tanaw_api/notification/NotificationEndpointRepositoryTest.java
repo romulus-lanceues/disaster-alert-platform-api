@@ -11,10 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.testcontainers.junit.jupiter.Container;
@@ -31,24 +28,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingTestConfig.class, NotificationEndpointRepositoryTest.CryptoTestConfig.class})
+@Import({JpaAuditingTestConfig.class, NotificationTestCryptoConfig.class})
 @DisplayName("NotificationEndpointRepository Tests")
 public class NotificationEndpointRepositoryTest {
-
-    private static final String TEST_AES_KEY = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=";
-
-    @Configuration
-    static class CryptoTestConfig {
-        @Bean
-        public DestinationCrypto destinationCrypto() {
-            return new DestinationCrypto(TEST_AES_KEY);
-        }
-
-        @Bean
-        public DestinationEncryptionConverter destinationEncryptionConverter(DestinationCrypto crypto) {
-            return new DestinationEncryptionConverter(crypto);
-        }
-    }
 
     @Container
     @ServiceConnection
