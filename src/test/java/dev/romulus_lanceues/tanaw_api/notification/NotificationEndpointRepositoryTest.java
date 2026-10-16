@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingTestConfig.class, NotificationTestCryptoConfig.class})
+@Import(JpaAuditingTestConfig.class)
 @DisplayName("NotificationEndpointRepository Tests")
 public class NotificationEndpointRepositoryTest {
 
