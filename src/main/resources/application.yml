@@ -78,4 +78,4 @@ notification:
     connect-timeout: PT3S
     read-timeout: PT10S
   crypto:
-    key: ${NOTIFICATION_CRYPTO_KEY:}
+    key: ${NOTIFICATION_CRYPTO_KEY}
