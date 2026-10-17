@@ -6,13 +6,17 @@ import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRule;
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
+import dev.romulus_lanceues.tanaw_api.disaster.Earthquake;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicArea;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaType;
 import dev.romulus_lanceues.tanaw_api.location.GeoPointFactory;
 import dev.romulus_lanceues.tanaw_api.location.Location;
 import dev.romulus_lanceues.tanaw_api.user.User;
 import dev.romulus_lanceues.tanaw_api.user.UserStatus;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -373,6 +377,135 @@ class NotificationDeliveryRepositoryTest {
         }
     }
 
+    @Nested
+    @DisplayName("findDeliveryContexts")
+    class FindDeliveryContexts {
+
+        @Test
+        @DisplayName("loads complete delivery context including decrypted destination, PostGIS distance in km, and USGS url")
+        void loadsCompleteDeliveryContext() throws Exception {
+            String rawWebhook = "https://discord.com/api/webhooks/123456789/token-abc-123";
+            String hint = "Discord webhook ...c-123";
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, rawWebhook, hint, true, Instant.now());
+
+            String json = """
+                    {
+                      "properties": {
+                        "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000test"
+                      }
+                    }
+                    """;
+            JsonNode rawPayload = new ObjectMapper().readTree(json);
+            DisasterEvent eventWithPayload = DisasterEvent.builder()
+                    .source("USGS")
+                    .externalId("usgs-detailed-" + UUID.randomUUID())
+                    .disasterType(DisasterType.EARTHQUAKE)
+                    .occurredAt(Instant.parse("2026-10-17T06:00:00Z"))
+                    .sourceUpdatedAt(Instant.parse("2026-10-17T06:05:00Z"))
+                    .status("reviewed")
+                    .place("10 km SW of Manila")
+                    .severity("HIGH")
+                    .rawPayload(rawPayload)
+                    .build();
+            entityManager.persistAndFlush(eventWithPayload);
+
+            // Epicenter at 14.7000, 121.0000 (roughly 11.3 km from Manila home 14.5995, 120.9842)
+            persistEarthquake(eventWithPayload, 14.7000, 121.0000, 5.4, 10.5);
+
+            Alert alert = persistAlert(eventWithPayload, primaryRule, AlertStatus.PROCESSED, Instant.now());
+            Notification notification = persistNotification(alert, endpoint, NotificationChannel.DISCORD, hint);
+
+            entityManager.clear();
+
+            List<NotificationDeliveryContext> contexts = deliveryRepository.findDeliveryContexts(List.of(notification.getId()));
+
+            assertThat(contexts).hasSize(1);
+            NotificationDeliveryContext ctx = contexts.get(0);
+
+            assertThat(ctx.notificationId()).isEqualTo(notification.getId());
+            assertThat(ctx.alertId()).isEqualTo(alert.getId());
+            assertThat(ctx.channel()).isEqualTo(NotificationChannel.DISCORD);
+            assertThat(ctx.destination()).isEqualTo(rawWebhook);
+            assertThat(ctx.destinationHint()).isEqualTo(hint);
+            assertThat(ctx.endpointId()).isEqualTo(endpoint.getId());
+            assertThat(ctx.endpointEnabled()).isTrue();
+            assertThat(ctx.endpointVerifiedAt()).isNotNull();
+            assertThat(ctx.isEndpointPresent()).isTrue();
+            assertThat(ctx.isEndpointEnabled()).isTrue();
+            assertThat(ctx.isEndpointVerified()).isTrue();
+            assertThat(ctx.userId()).isEqualTo(primaryUser.getId());
+            assertThat(ctx.userStatus()).isEqualTo(UserStatus.ACTIVE);
+            assertThat(ctx.isUserActive()).isTrue();
+            assertThat(ctx.locationName()).isEqualTo("Home");
+            assertThat(ctx.place()).isEqualTo("10 km SW of Manila");
+            assertThat(ctx.occurredAt()).isEqualTo(Instant.parse("2026-10-17T06:00:00Z"));
+            assertThat(ctx.eventStatus()).isEqualTo("reviewed");
+            assertThat(ctx.severity()).isEqualTo("HIGH");
+            assertThat(ctx.usgsUrl()).isEqualTo("https://earthquake.usgs.gov/earthquakes/eventpage/us7000test");
+            assertThat(ctx.magnitude()).isEqualTo(5.4);
+            assertThat(ctx.depthKm()).isEqualTo(10.5);
+            assertThat(ctx.distanceKm()).isNotNull();
+            assertThat(ctx.distanceKm()).isCloseTo(11.3, Offset.offset(0.5));
+        }
+
+        @Test
+        @DisplayName("handles deleted endpoint gracefully with null endpoint fields")
+        void handlesDeletedEndpointGracefully() {
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, Instant.now());
+            Notification notification = persistNotification(alert, null, NotificationChannel.DISCORD, "Discord ...snapshot");
+
+            entityManager.clear();
+
+            List<NotificationDeliveryContext> contexts = deliveryRepository.findDeliveryContexts(List.of(notification.getId()));
+
+            assertThat(contexts).hasSize(1);
+            NotificationDeliveryContext ctx = contexts.get(0);
+
+            assertThat(ctx.notificationId()).isEqualTo(notification.getId());
+            assertThat(ctx.endpointId()).isNull();
+            assertThat(ctx.destination()).isNull();
+            assertThat(ctx.destinationHint()).isEqualTo("Discord ...snapshot");
+            assertThat(ctx.endpointEnabled()).isNull();
+            assertThat(ctx.endpointVerifiedAt()).isNull();
+            assertThat(ctx.isEndpointPresent()).isFalse();
+            assertThat(ctx.isEndpointEnabled()).isFalse();
+            assertThat(ctx.isEndpointVerified()).isFalse();
+            assertThat(ctx.userId()).isEqualTo(primaryUser.getId());
+            assertThat(ctx.userStatus()).isEqualTo(UserStatus.ACTIVE);
+            assertThat(ctx.locationName()).isEqualTo("Home");
+        }
+
+        @Test
+        @DisplayName("reflects inactive user status correctly")
+        void reflectsInactiveUserStatus() {
+            User disabledUser = persistUser("inactive@example.com", UserStatus.DISABLED);
+            Location disabledLoc = persistLocation(disabledUser, "Office", 14.5, 121.0);
+            AlertRule disabledRule = persistAlertRule(disabledLoc, DisasterType.EARTHQUAKE, 4.0, 30.0);
+            NotificationEndpoint ep = persistEndpoint(disabledUser, NotificationChannel.DISCORD, "https://discord.com/api/webhooks/1/tok", "Discord ...tok", true, Instant.now());
+
+            Alert alert = persistAlert(primaryDisasterEvent, disabledRule, AlertStatus.PROCESSED, Instant.now());
+            Notification notification = persistNotification(alert, ep, NotificationChannel.DISCORD, "Discord ...tok");
+
+            entityManager.clear();
+
+            List<NotificationDeliveryContext> contexts = deliveryRepository.findDeliveryContexts(List.of(notification.getId()));
+
+            assertThat(contexts).hasSize(1);
+            NotificationDeliveryContext ctx = contexts.get(0);
+            assertThat(ctx.userId()).isEqualTo(disabledUser.getId());
+            assertThat(ctx.userStatus()).isEqualTo(UserStatus.DISABLED);
+            assertThat(ctx.isUserActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("returns empty list for null, empty, or non-existent IDs")
+        void returnsEmptyListForEmptyOrNull() {
+            assertThat(deliveryRepository.findDeliveryContexts(List.of())).isEmpty();
+            assertThat(deliveryRepository.findDeliveryContexts(null)).isEmpty();
+            assertThat(deliveryRepository.findDeliveryContexts(List.of(UUID.randomUUID()))).isEmpty();
+        }
+    }
+
     private User persistUser(String email, UserStatus status) {
         User user = User.builder()
                 .email(email)
@@ -442,14 +575,43 @@ class NotificationDeliveryRepositoryTest {
     }
 
     private NotificationEndpoint persistEndpoint(User user, NotificationChannel channel, String destinationHint, boolean enabled, Instant verifiedAt) {
+        return persistEndpoint(user, channel, "https://discord.com/api/webhooks/default/" + destinationHint, destinationHint, enabled, verifiedAt);
+    }
+
+    private NotificationEndpoint persistEndpoint(User user, NotificationChannel channel, String rawDestination, String destinationHint, boolean enabled, Instant verifiedAt) {
         NotificationEndpoint endpoint = NotificationEndpoint.builder()
                 .user(user)
                 .channel(channel)
-                .destination("enc:" + destinationHint)
+                .destination(rawDestination)
                 .destinationHint(destinationHint)
                 .enabled(enabled)
                 .verifiedAt(verifiedAt)
                 .build();
         return entityManager.persistAndFlush(endpoint);
+    }
+
+    private Earthquake persistEarthquake(DisasterEvent event, double latitude, double longitude, Double magnitude, Double depthKm) {
+        Earthquake earthquake = Earthquake.builder()
+                .event(event)
+                .disasterType(DisasterType.EARTHQUAKE)
+                .latitude(latitude)
+                .longitude(longitude)
+                .location(geoPointFactory.create(latitude, longitude))
+                .magnitude(magnitude)
+                .depthKm(depthKm)
+                .build();
+        return entityManager.persistAndFlush(earthquake);
+    }
+
+    private Notification persistNotification(Alert alert, NotificationEndpoint endpoint, NotificationChannel channel, String destinationHint) {
+        Notification notification = Notification.builder()
+                .alert(alert)
+                .endpoint(endpoint)
+                .channel(channel)
+                .destination(destinationHint)
+                .status(NotificationStatus.PENDING)
+                .attemptCount(0)
+                .build();
+        return entityManager.persistAndFlush(notification);
     }
 }
