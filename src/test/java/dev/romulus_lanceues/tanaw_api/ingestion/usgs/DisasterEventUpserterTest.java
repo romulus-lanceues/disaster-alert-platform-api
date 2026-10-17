@@ -27,9 +27,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import dev.romulus_lanceues.tanaw_api.notification.NotificationTestCryptoConfig;
+import org.springframework.context.annotation.Import;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = "security.jwt.secret=" + TestJwtFactory.DEFAULT_SECRET)
+@Import(NotificationTestCryptoConfig.class)
 @Testcontainers
 @DisplayName("DisasterEventUpserter Integration Tests")
 class DisasterEventUpserterTest {
