@@ -32,7 +32,7 @@ public class DiscordDestinationValidator {
         try {
             uri = new URI(destination.trim());
         } catch (URISyntaxException ex) {
-            throw new InvalidDestinationException("Invalid Discord webhook URI syntax: " + ex.getMessage(), ex);
+            throw new InvalidDestinationException("Invalid Discord webhook URI syntax: " + ex.getReason(), ex);
         }
 
         String scheme = uri.getScheme();
