@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.web.client.RestClient;
 
+import tools.jackson.databind.ObjectMapper;
+
 import java.time.Clock;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,11 +18,13 @@ class NotificationConfigTest {
             .withUserConfiguration(
                     NotificationConfig.class,
                     DiscordTestSender.class,
+                    DiscordNotificationSender.class,
                     DiscordDestinationValidator.class,
                     DestinationMasker.class,
                     EndpointTestRateLimiter.class,
                     ChannelSupportRegistry.class
             )
+            .withBean(ObjectMapper.class, ObjectMapper::new)
             .withBean(Clock.class, Clock::systemUTC)
             .withPropertyValues(
                     "notification.dry-run=true",
@@ -45,12 +49,16 @@ class NotificationConfigTest {
             assertThat(context).hasBean("discordRestClient");
             assertThat(context).getBean("discordRestClient").isInstanceOf(RestClient.class);
             assertThat(context).hasSingleBean(DiscordTestSender.class);
+            assertThat(context).hasSingleBean(DiscordNotificationSender.class);
             assertThat(context).hasSingleBean(EndpointTestRateLimiter.class);
             assertThat(context).hasSingleBean(ChannelSupportRegistry.class);
 
             ChannelSupportRegistry registry = context.getBean(ChannelSupportRegistry.class);
             assertThat(registry.isSupported(NotificationChannel.DISCORD)).isTrue();
             assertThat(registry.isSupported(NotificationChannel.EMAIL)).isFalse();
+            assertThat(registry.hasSender(NotificationChannel.DISCORD)).isTrue();
+            assertThat(registry.getSender(NotificationChannel.DISCORD)).isInstanceOf(DiscordNotificationSender.class);
+            assertThat(registry.hasSender(NotificationChannel.EMAIL)).isFalse();
         });
     }
 }
