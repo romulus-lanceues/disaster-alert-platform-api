@@ -94,7 +94,7 @@ class NotificationFanoutIntegrationTest {
                 public void verify(String destination) {
                 }
             };
-            return new ChannelSupportRegistry(List.of(discordVerifier));
+            return new ChannelSupportRegistry(List.of(discordVerifier), List.of());
         }
 
         @Bean
