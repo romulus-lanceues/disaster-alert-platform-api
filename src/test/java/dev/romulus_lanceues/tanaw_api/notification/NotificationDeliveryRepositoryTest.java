@@ -506,6 +506,424 @@ class NotificationDeliveryRepositoryTest {
         }
     }
 
+    @Nested
+    @DisplayName("claimPendingNotifications")
+    class ClaimPendingNotifications {
+
+        @Test
+        @DisplayName("claims pending notifications ordered by next_attempt_at ascending and sets status to PROCESSING with lease")
+        void claimsPendingNotificationsOrderedByNextAttemptAtAsc() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Instant t1 = now.minus(10, ChronoUnit.MINUTES);
+            Instant t2 = now.minus(5, ChronoUnit.MINUTES);
+            Instant tFuture = now.plus(5, ChronoUnit.MINUTES);
+
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, t1);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n1 = persistNotification(alert, endpoint, NotificationChannel.DISCORD, "hint-1", NotificationStatus.PENDING, 0, t2, null);
+            Notification n2 = persistNotification(alert, endpoint, NotificationChannel.EMAIL, "hint-2", NotificationStatus.PENDING, 0, t1, null);
+            Notification nFuture = persistNotification(alert, endpoint, NotificationChannel.TELEGRAM, "hint-3", NotificationStatus.PENDING, 0, tFuture, null);
+
+            List<ClaimedNotification> claimed = new TransactionTemplate(transactionManager).execute(status ->
+                    deliveryRepository.claimPendingNotifications(2, now, java.time.Duration.ofMinutes(2))
+            );
+
+            assertThat(claimed).hasSize(2);
+            assertThat(claimed.get(0).id()).isEqualTo(n2.getId());
+            assertThat(claimed.get(0).attemptCount()).isEqualTo(1);
+            assertThat(claimed.get(1).id()).isEqualTo(n1.getId());
+            assertThat(claimed.get(1).attemptCount()).isEqualTo(1);
+
+            entityManager.clear();
+            Notification reloadedN2 = entityManager.find(Notification.class, n2.getId());
+            assertThat(reloadedN2.getStatus()).isEqualTo(NotificationStatus.PROCESSING);
+            assertThat(reloadedN2.getAttemptCount()).isEqualTo(1);
+            assertThat(reloadedN2.getLockedUntil()).isAfterOrEqualTo(now.plus(119, ChronoUnit.SECONDS));
+
+            Notification reloadedFuture = entityManager.find(Notification.class, nFuture.getId());
+            assertThat(reloadedFuture.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloadedFuture.getAttemptCount()).isEqualTo(0);
+        }
+
+        @Test
+        @DisplayName("concurrent claimers never claim the same notifications due to SKIP LOCKED")
+        void concurrentClaimsNeverClaimSameNotifications() throws Exception {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n1 = persistNotification(alert, endpoint, NotificationChannel.DISCORD, "hint-1", NotificationStatus.PENDING, 0, now.minus(5, ChronoUnit.MINUTES), null);
+            Notification n2 = persistNotification(alert, endpoint, NotificationChannel.EMAIL, "hint-2", NotificationStatus.PENDING, 0, now.minus(4, ChronoUnit.MINUTES), null);
+
+            // Commit the setup so other database sessions can see the rows
+            org.springframework.test.context.transaction.TestTransaction.flagForCommit();
+            org.springframework.test.context.transaction.TestTransaction.end();
+
+            TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            CountDownLatch t1ClaimedLatch = new CountDownLatch(1);
+            CountDownLatch finishLatch = new CountDownLatch(1);
+
+            try {
+                Future<List<ClaimedNotification>> t1Future = executor.submit(() -> txTemplate.execute(status -> {
+                    List<ClaimedNotification> claims = deliveryRepository.claimPendingNotifications(1, now, java.time.Duration.ofMinutes(2));
+                    t1ClaimedLatch.countDown();
+                    try {
+                        finishLatch.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return claims;
+                }));
+
+                t1ClaimedLatch.await(5, TimeUnit.SECONDS);
+
+                Future<List<ClaimedNotification>> t2Future = executor.submit(() -> txTemplate.execute(status ->
+                        deliveryRepository.claimPendingNotifications(1, now, java.time.Duration.ofMinutes(2))
+                ));
+
+                List<ClaimedNotification> t2Claims = t2Future.get();
+                finishLatch.countDown();
+                List<ClaimedNotification> t1Claims = t1Future.get();
+
+                assertThat(t1Claims).hasSize(1);
+                assertThat(t2Claims).hasSize(1);
+                assertThat(t1Claims.get(0).id()).isNotEqualTo(t2Claims.get(0).id());
+                assertThat(List.of(t1Claims.get(0).id(), t2Claims.get(0).id())).containsExactlyInAnyOrder(n1.getId(), n2.getId());
+            } finally {
+                executor.shutdown();
+                org.springframework.test.context.transaction.TestTransaction.start();
+                notificationRepository.deleteAll();
+                org.springframework.test.context.transaction.TestTransaction.flagForCommit();
+                org.springframework.test.context.transaction.TestTransaction.end();
+                org.springframework.test.context.transaction.TestTransaction.start();
+            }
+        }
+
+        @Test
+        @DisplayName("returns empty list when limit <= 0 or no ready notifications")
+        void returnsEmptyListWhenNoMatches() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            assertThat(deliveryRepository.claimPendingNotifications(0, now, java.time.Duration.ofMinutes(2))).isEmpty();
+            assertThat(deliveryRepository.claimPendingNotifications(-1, now, java.time.Duration.ofMinutes(2))).isEmpty();
+            assertThat(deliveryRepository.claimPendingNotifications(10, now, java.time.Duration.ofMinutes(2))).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("reapExpiredLeases")
+    class ReapExpiredLeases {
+
+        @Test
+        @DisplayName("reaps expired PROCESSING notifications back to PENDING when attempt_count < maxAttempts")
+        void reapsExpiredProcessingNotificationsBelowMaxAttempts() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification expired = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now.minus(10, ChronoUnit.MINUTES), now.minus(1, ChronoUnit.MINUTES)
+            );
+
+            int reaped = deliveryRepository.reapExpiredLeases(now, 3);
+            assertThat(reaped).isEqualTo(1);
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, expired.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloaded.getLockedUntil()).isNull();
+            assertThat(reloaded.getNextAttemptAt()).isEqualTo(now);
+            assertThat(reloaded.getFailureReason()).isEqualTo("Lease expired; returned to queue");
+        }
+
+        @Test
+        @DisplayName("marks expired PROCESSING notifications as FAILED when attempt_count >= maxAttempts")
+        void marksExpiredProcessingNotificationsAtOrAboveMaxAttemptsAsFailed() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification expiredExhausted = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 3, now.minus(10, ChronoUnit.MINUTES), now.minus(1, ChronoUnit.MINUTES)
+            );
+
+            int reaped = deliveryRepository.reapExpiredLeases(now, 3);
+            assertThat(reaped).isEqualTo(1);
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, expiredExhausted.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.FAILED);
+            assertThat(reloaded.getLockedUntil()).isNull();
+            assertThat(reloaded.getFailureReason()).isEqualTo("Lease expired; max attempts exceeded");
+        }
+
+        @Test
+        @DisplayName("ignores unexpired PROCESSING notifications and notifications in other statuses")
+        void ignoresUnexpiredNotifications() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification unexpired = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now.minus(5, ChronoUnit.MINUTES), now.plus(2, ChronoUnit.MINUTES)
+            );
+            persistNotification(
+                    alert, endpoint, NotificationChannel.EMAIL, "hint-2",
+                    NotificationStatus.PENDING, 0, now.minus(5, ChronoUnit.MINUTES), now.minus(2, ChronoUnit.MINUTES)
+            );
+
+            int reaped = deliveryRepository.reapExpiredLeases(now, 3);
+            assertThat(reaped).isZero();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, unexpired.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.PROCESSING);
+            assertThat(reloaded.getLockedUntil()).isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("fencedOutcomeRecording")
+    class FencedOutcomeRecording {
+
+        @Test
+        @DisplayName("recordSuccess updates status to SENT and sets providerMessageId when fencing token matches")
+        void recordSuccessWhenFencingTokenMatches() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Instant sentAt = now.minus(1, ChronoUnit.SECONDS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 2, now, now.plus(2, ChronoUnit.MINUTES)
+            );
+
+            boolean updated = deliveryRepository.recordSuccess(n.getId(), 2, "msg-discord-999", sentAt, now);
+            assertThat(updated).isTrue();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.SENT);
+            assertThat(reloaded.getProviderMessageId()).isEqualTo("msg-discord-999");
+            assertThat(reloaded.getSentAt()).isEqualTo(sentAt);
+            assertThat(reloaded.getFailureReason()).isNull();
+            assertThat(reloaded.getLockedUntil()).isNull();
+        }
+
+        @Test
+        @DisplayName("recordSuccess returns false and does not mutate when attempt_count does not match fencing token")
+        void recordSuccessFailsWhenFencingTokenMismatches() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 3, now, now.plus(2, ChronoUnit.MINUTES)
+            );
+
+            boolean updated = deliveryRepository.recordSuccess(n.getId(), 2, "msg-discord-999", now, now);
+            assertThat(updated).isFalse();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.PROCESSING);
+            assertThat(reloaded.getAttemptCount()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("recordPreSendCancellation transitions PROCESSING to CANCELLED with reason")
+        void recordPreSendCancellation() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now, now.plus(2, ChronoUnit.MINUTES)
+            );
+
+            boolean updated = deliveryRepository.recordPreSendCancellation(n.getId(), 1, "ENDPOINT_DISABLED", now);
+            assertThat(updated).isTrue();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(reloaded.getFailureReason()).isEqualTo("ENDPOINT_DISABLED");
+            assertThat(reloaded.getLockedUntil()).isNull();
+        }
+
+        @Test
+        @DisplayName("recordRetryableFailure requeues to PENDING when claimedAttempt < maxAttempts")
+        void recordRetryableFailureRequeues() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Instant nextAttemptAt = now.plus(30, ChronoUnit.SECONDS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now, now.plus(2, ChronoUnit.MINUTES)
+            );
+
+            boolean updated = deliveryRepository.recordRetryableFailure(n.getId(), 1, "HTTP 429", nextAttemptAt, 3, now);
+            assertThat(updated).isTrue();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloaded.getNextAttemptAt()).isEqualTo(nextAttemptAt);
+            assertThat(reloaded.getFailureReason()).isEqualTo("HTTP 429");
+            assertThat(reloaded.getLockedUntil()).isNull();
+        }
+
+        @Test
+        @DisplayName("recordRetryableFailure marks as FAILED when claimedAttempt >= maxAttempts")
+        void recordRetryableFailureExhausts() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Instant nextAttemptAt = now.plus(30, ChronoUnit.SECONDS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 3, now, now.plus(2, ChronoUnit.MINUTES)
+            );
+
+            boolean updated = deliveryRepository.recordRetryableFailure(n.getId(), 3, "HTTP 500", nextAttemptAt, 3, now);
+            assertThat(updated).isTrue();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.FAILED);
+            assertThat(reloaded.getFailureReason()).isEqualTo("HTTP 500");
+            assertThat(reloaded.getLockedUntil()).isNull();
+        }
+
+        @Test
+        @DisplayName("recordPermanentFailure marks notification as FAILED")
+        void recordPermanentFailureMarksAsFailed() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now, now.plus(2, ChronoUnit.MINUTES)
+            );
+
+            boolean updated = deliveryRepository.recordPermanentFailure(n.getId(), 1, "HTTP 404 WEBHOOK_NOT_FOUND", now);
+            assertThat(updated).isTrue();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.FAILED);
+            assertThat(reloaded.getFailureReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+            assertThat(reloaded.getLockedUntil()).isNull();
+        }
+
+        @Test
+        @DisplayName("recordSuccess rejects stale worker when lease was expired and reaped")
+        void recordSuccessRejectsStaleWorkerAfterReap() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now.minus(10, ChronoUnit.MINUTES), now.minus(1, ChronoUnit.MINUTES)
+            );
+
+            // Reaper runs and moves the expired row back to PENDING
+            int reaped = deliveryRepository.reapExpiredLeases(now, 3);
+            assertThat(reaped).isEqualTo(1);
+
+            // Stale worker finishes its send and tries to record success with claimedAttempt = 1
+            boolean updated = deliveryRepository.recordSuccess(n.getId(), 1, "msg-late-123", now, now);
+            assertThat(updated).isFalse();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloaded.getProviderMessageId()).isNull();
+            assertThat(reloaded.getFailureReason()).isEqualTo("Lease expired; returned to queue");
+        }
+    }
+
+    @Nested
+    @DisplayName("invalidateEndpointAndCancelPending")
+    class InvalidateEndpointAndCancelPending {
+
+        @Test
+        @DisplayName("disables endpoint with reason and cancels all other pending notifications for that endpoint")
+        void disablesEndpointAndCancelsPendingNotifications() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert1 = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            DisasterEvent event2 = persistDisasterEvent("USGS", "event-" + UUID.randomUUID(), now);
+            Alert alert2 = persistAlert(event2, primaryRule, AlertStatus.PROCESSED, now.plus(1, ChronoUnit.SECONDS));
+            DisasterEvent event3 = persistDisasterEvent("USGS", "event-" + UUID.randomUUID(), now);
+            Alert alert3 = persistAlert(event3, primaryRule, AlertStatus.PROCESSED, now.plus(2, ChronoUnit.SECONDS));
+
+            NotificationEndpoint endpoint1 = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+            NotificationEndpoint endpoint2 = persistEndpoint(primaryUser, NotificationChannel.EMAIL, "hint-2", true, now);
+
+            Notification n1Pending = persistNotification(alert1, endpoint1, NotificationChannel.DISCORD, "hint-1", NotificationStatus.PENDING, 0, now, null);
+            Notification n2Pending = persistNotification(alert2, endpoint1, NotificationChannel.DISCORD, "hint-1", NotificationStatus.PENDING, 1, now, null);
+            Notification n1Sent = persistNotification(alert1, endpoint1, NotificationChannel.EMAIL, "hint-1", NotificationStatus.SENT, 1, now, null);
+            Notification nOtherEndpoint = persistNotification(alert3, endpoint2, NotificationChannel.EMAIL, "hint-2", NotificationStatus.PENDING, 0, now, null);
+
+            int cancelled = deliveryRepository.invalidateEndpointAndCancelPending(endpoint1.getId(), "HTTP 404 WEBHOOK_NOT_FOUND", now);
+            assertThat(cancelled).isEqualTo(2);
+
+            entityManager.clear();
+            NotificationEndpoint reloadedEndpoint1 = entityManager.find(NotificationEndpoint.class, endpoint1.getId());
+            assertThat(reloadedEndpoint1.isEnabled()).isFalse();
+            assertThat(reloadedEndpoint1.getDisabledReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+
+            Notification reloadedN1 = entityManager.find(Notification.class, n1Pending.getId());
+            assertThat(reloadedN1.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(reloadedN1.getFailureReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+
+            Notification reloadedN2 = entityManager.find(Notification.class, n2Pending.getId());
+            assertThat(reloadedN2.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+
+            Notification reloadedN1Sent = entityManager.find(Notification.class, n1Sent.getId());
+            assertThat(reloadedN1Sent.getStatus()).isEqualTo(NotificationStatus.SENT);
+
+            Notification reloadedOther = entityManager.find(Notification.class, nOtherEndpoint.getId());
+            assertThat(reloadedOther.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("handles reason longer than 100 characters by safely truncating for endpoint and keeping full reason for notifications")
+        void handlesLongReasonSafely() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-long", true, now);
+            Notification nPending = persistNotification(alert, endpoint, NotificationChannel.DISCORD, "hint-long", NotificationStatus.PENDING, 0, now, null);
+
+            String longReason = "HTTP 404 Discord webhook deleted permanently: https://discord.com/api/webhooks/1234567890/very-long-token-that-exceeds-one-hundred-characters-and-would-normally-cause-a-database-overflow-error";
+            assertThat(longReason.length()).isGreaterThan(100);
+
+            int cancelled = deliveryRepository.invalidateEndpointAndCancelPending(endpoint.getId(), longReason, now);
+            assertThat(cancelled).isEqualTo(1);
+
+            entityManager.clear();
+            NotificationEndpoint reloadedEndpoint = entityManager.find(NotificationEndpoint.class, endpoint.getId());
+            assertThat(reloadedEndpoint.isEnabled()).isFalse();
+            assertThat(reloadedEndpoint.getDisabledReason()).isEqualTo(longReason.substring(0, 100));
+
+            Notification reloadedNotification = entityManager.find(Notification.class, nPending.getId());
+            assertThat(reloadedNotification.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(reloadedNotification.getFailureReason()).isEqualTo(longReason);
+        }
+    }
+
     private User persistUser(String email, UserStatus status) {
         User user = User.builder()
                 .email(email)
@@ -604,13 +1022,28 @@ class NotificationDeliveryRepositoryTest {
     }
 
     private Notification persistNotification(Alert alert, NotificationEndpoint endpoint, NotificationChannel channel, String destinationHint) {
+        return persistNotification(alert, endpoint, channel, destinationHint, NotificationStatus.PENDING, 0, Instant.now(), null);
+    }
+
+    private Notification persistNotification(
+            Alert alert,
+            NotificationEndpoint endpoint,
+            NotificationChannel channel,
+            String destinationHint,
+            NotificationStatus status,
+            int attemptCount,
+            Instant nextAttemptAt,
+            Instant lockedUntil
+    ) {
         Notification notification = Notification.builder()
                 .alert(alert)
                 .endpoint(endpoint)
                 .channel(channel)
                 .destination(destinationHint)
-                .status(NotificationStatus.PENDING)
-                .attemptCount(0)
+                .status(status)
+                .attemptCount(attemptCount)
+                .nextAttemptAt(nextAttemptAt)
+                .lockedUntil(lockedUntil)
                 .build();
         return entityManager.persistAndFlush(notification);
     }
