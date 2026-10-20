@@ -10,6 +10,7 @@ import dev.romulus_lanceues.tanaw_api.user.UserStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -242,5 +243,241 @@ public class NotificationDeliveryRepository {
                 .addValue("now", Timestamp.from(now));
 
         return jdbc.update(sql, params);
+    }
+
+    public List<ClaimedNotification> claimPendingNotifications(int limit, Instant now, Duration lease) {
+        if (limit <= 0 || now == null || lease == null) {
+            return List.of();
+        }
+
+        String sql = """
+                WITH claimed AS (
+                    SELECT id, next_attempt_at
+                    FROM notifications
+                    WHERE status = 'PENDING'
+                      AND next_attempt_at <= :now
+                    ORDER BY next_attempt_at ASC, id ASC
+                    LIMIT :limit
+                    FOR UPDATE SKIP LOCKED
+                ),
+                updated AS (
+                    UPDATE notifications n
+                    SET status = 'PROCESSING',
+                        attempt_count = n.attempt_count + 1,
+                        locked_until = :lockedUntil,
+                        updated_at = :now
+                    FROM claimed c
+                    WHERE n.id = c.id
+                    RETURNING n.id, n.attempt_count, c.next_attempt_at
+                )
+                SELECT id, attempt_count
+                FROM updated
+                ORDER BY next_attempt_at ASC, id ASC
+                """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("limit", limit)
+                .addValue("now", Timestamp.from(now))
+                .addValue("lockedUntil", Timestamp.from(now.plus(lease)));
+
+        return jdbc.query(sql, params, (rs, rowNum) -> new ClaimedNotification(
+                rs.getObject("id", UUID.class),
+                rs.getInt("attempt_count")
+        ));
+    }
+
+    public int reapExpiredLeases(Instant now, int maxAttempts) {
+        if (now == null || maxAttempts <= 0) {
+            return 0;
+        }
+
+        String sql = """
+                UPDATE notifications
+                SET status = CASE
+                        WHEN attempt_count >= :maxAttempts THEN 'FAILED'
+                        ELSE 'PENDING'
+                    END,
+                    failure_reason = CASE
+                        WHEN attempt_count >= :maxAttempts THEN 'Lease expired; max attempts exceeded'
+                        ELSE 'Lease expired; returned to queue'
+                    END,
+                    next_attempt_at = :now,
+                    locked_until = NULL,
+                    updated_at = :now
+                WHERE status = 'PROCESSING'
+                  AND locked_until < :now
+                """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("now", Timestamp.from(now))
+                .addValue("maxAttempts", maxAttempts);
+
+        return jdbc.update(sql, params);
+    }
+
+    public boolean recordSuccess(UUID id, int claimedAttempt, String providerMessageId, Instant sentAt, Instant now) {
+        if (id == null || now == null) {
+            return false;
+        }
+
+        String safeMessageId = (providerMessageId != null && providerMessageId.length() > 100)
+                ? providerMessageId.substring(0, 100)
+                : providerMessageId;
+
+        String sql = """
+                UPDATE notifications
+                SET status = 'SENT',
+                    provider_message_id = :providerMessageId,
+                    sent_at = :sentAt,
+                    failure_reason = NULL,
+                    locked_until = NULL,
+                    updated_at = :now
+                WHERE id = :id
+                  AND status = 'PROCESSING'
+                  AND attempt_count = :claimedAttempt
+                """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("claimedAttempt", claimedAttempt)
+                .addValue("providerMessageId", safeMessageId)
+                .addValue("sentAt", sentAt != null ? Timestamp.from(sentAt) : Timestamp.from(now))
+                .addValue("now", Timestamp.from(now));
+
+        return jdbc.update(sql, params) > 0;
+    }
+
+    public boolean recordPreSendCancellation(UUID id, int claimedAttempt, String reason, Instant now) {
+        if (id == null || now == null) {
+            return false;
+        }
+
+        String sql = """
+                UPDATE notifications
+                SET status = 'CANCELLED',
+                    failure_reason = :reason,
+                    locked_until = NULL,
+                    updated_at = :now
+                WHERE id = :id
+                  AND status = 'PROCESSING'
+                  AND attempt_count = :claimedAttempt
+                """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("claimedAttempt", claimedAttempt)
+                .addValue("reason", reason)
+                .addValue("now", Timestamp.from(now));
+
+        return jdbc.update(sql, params) > 0;
+    }
+
+    public boolean recordRetryableFailure(UUID id, int claimedAttempt, String reason, Instant nextAttemptAt, int maxAttempts, Instant now) {
+        if (id == null || now == null) {
+            return false;
+        }
+
+        boolean exhausted = claimedAttempt >= maxAttempts;
+        String sql;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("claimedAttempt", claimedAttempt)
+                .addValue("reason", reason)
+                .addValue("now", Timestamp.from(now));
+
+        if (exhausted) {
+            sql = """
+                    UPDATE notifications
+                    SET status = 'FAILED',
+                        failure_reason = :reason,
+                        locked_until = NULL,
+                        updated_at = :now
+                    WHERE id = :id
+                      AND status = 'PROCESSING'
+                      AND attempt_count = :claimedAttempt
+                    """;
+        } else {
+            sql = """
+                    UPDATE notifications
+                    SET status = 'PENDING',
+                        next_attempt_at = :nextAttemptAt,
+                        failure_reason = :reason,
+                        locked_until = NULL,
+                        updated_at = :now
+                    WHERE id = :id
+                      AND status = 'PROCESSING'
+                      AND attempt_count = :claimedAttempt
+                    """;
+            params.addValue("nextAttemptAt", nextAttemptAt != null ? Timestamp.from(nextAttemptAt) : Timestamp.from(now));
+        }
+
+        return jdbc.update(sql, params) > 0;
+    }
+
+    public boolean recordPermanentFailure(UUID id, int claimedAttempt, String reason, Instant now) {
+        if (id == null || now == null) {
+            return false;
+        }
+
+        String sql = """
+                UPDATE notifications
+                SET status = 'FAILED',
+                    failure_reason = :reason,
+                    locked_until = NULL,
+                    updated_at = :now
+                WHERE id = :id
+                  AND status = 'PROCESSING'
+                  AND attempt_count = :claimedAttempt
+                """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("claimedAttempt", claimedAttempt)
+                .addValue("reason", reason)
+                .addValue("now", Timestamp.from(now));
+
+        return jdbc.update(sql, params) > 0;
+    }
+
+    public int invalidateEndpointAndCancelPending(UUID endpointId, String reason, Instant now) {
+        if (endpointId == null || now == null) {
+            return 0;
+        }
+
+        String endpointReason = (reason != null && reason.length() > 100)
+                ? reason.substring(0, 100)
+                : reason;
+
+        String updateEndpointSql = """
+                UPDATE notification_endpoints
+                SET enabled = FALSE,
+                    disabled_reason = :reason,
+                    updated_at = :now
+                WHERE id = :endpointId
+                """;
+
+        MapSqlParameterSource endpointParams = new MapSqlParameterSource()
+                .addValue("endpointId", endpointId)
+                .addValue("reason", endpointReason)
+                .addValue("now", Timestamp.from(now));
+
+        jdbc.update(updateEndpointSql, endpointParams);
+
+        String cancelPendingSql = """
+                UPDATE notifications
+                SET status = 'CANCELLED',
+                    failure_reason = :reason,
+                    locked_until = NULL,
+                    updated_at = :now
+                WHERE endpoint_id = :endpointId
+                  AND status = 'PENDING'
+                """;
+
+        MapSqlParameterSource notifParams = new MapSqlParameterSource()
+                .addValue("endpointId", endpointId)
+                .addValue("reason", reason)
+                .addValue("now", Timestamp.from(now));
+
+        return jdbc.update(cancelPendingSql, notifParams);
     }
 }
