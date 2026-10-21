@@ -4,6 +4,8 @@ import dev.romulus_lanceues.tanaw_api.alert.Alert;
 import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRule;
 import dev.romulus_lanceues.tanaw_api.alert.AlertStatus;
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
+import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpoint;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import dev.romulus_lanceues.tanaw_api.location.GeoPointFactory;

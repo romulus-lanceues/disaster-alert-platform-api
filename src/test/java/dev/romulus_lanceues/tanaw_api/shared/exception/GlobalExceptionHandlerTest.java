@@ -1,12 +1,12 @@
 package dev.romulus_lanceues.tanaw_api.shared.exception;
 
 import dev.romulus_lanceues.tanaw_api.auth.InvalidCredentialsException;
-import dev.romulus_lanceues.tanaw_api.notification.EndpointVerificationException;
-import dev.romulus_lanceues.tanaw_api.notification.InvalidDestinationException;
-import dev.romulus_lanceues.tanaw_api.notification.NotificationChannel;
-import dev.romulus_lanceues.tanaw_api.notification.NotificationEndpointNotFoundException;
-import dev.romulus_lanceues.tanaw_api.notification.RateLimitExceededException;
-import dev.romulus_lanceues.tanaw_api.notification.UnsupportedNotificationChannelException;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpointNotFoundException;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.RateLimitExceededException;
+import dev.romulus_lanceues.tanaw_api.notification.channel.EndpointVerificationException;
+import dev.romulus_lanceues.tanaw_api.notification.channel.InvalidDestinationException;
+import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
+import dev.romulus_lanceues.tanaw_api.notification.channel.UnsupportedNotificationChannelException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

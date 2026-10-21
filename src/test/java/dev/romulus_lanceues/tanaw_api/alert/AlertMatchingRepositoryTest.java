@@ -43,7 +43,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.*;
 
-import dev.romulus_lanceues.tanaw_api.notification.NotificationTestCryptoConfig;
+import dev.romulus_lanceues.tanaw_api.notification.destination.NotificationTestCryptoConfig;
 import org.springframework.context.annotation.Import;
 
 import static org.assertj.core.api.Assertions.assertThat;

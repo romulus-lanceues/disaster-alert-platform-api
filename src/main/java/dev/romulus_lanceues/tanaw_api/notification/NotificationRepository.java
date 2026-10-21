@@ -1,5 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.notification;
 
+import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
