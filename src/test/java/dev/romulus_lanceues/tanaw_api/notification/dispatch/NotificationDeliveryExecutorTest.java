@@ -440,7 +440,7 @@ class NotificationDeliveryExecutorTest {
         }
 
         @Test
-        @DisplayName("records permanent failure with endpoint invalidation and cancels pending notifications")
+        @DisplayName("records permanent failure with atomic endpoint invalidation in a single transaction")
         void handlesPermanentFailureWithInvalidation() {
             NotificationDeliveryContext context = createValidContext();
             given(channelSupportRegistry.hasSender(NotificationChannel.DISCORD)).willReturn(true);
@@ -448,34 +448,34 @@ class NotificationDeliveryExecutorTest {
             given(alertMessageFactory.create(context)).willReturn(mockAlertMessage);
             given(discordSender.send(mockAlertMessage, destination))
                     .willReturn(new DeliveryResult.Permanent("HTTP 404 Webhook Not Found", true));
-            given(deliveryRepository.recordPermanentFailure(notificationId, 1, "HTTP 404 Webhook Not Found", FIXED_NOW))
+            given(deliveryRepository.recordPermanentFailureAndInvalidateEndpoint(
+                    notificationId, 1, endpointId, "HTTP 404 Webhook Not Found", FIXED_NOW))
                     .willReturn(true);
-            given(deliveryRepository.invalidateEndpointAndCancelPending(endpointId, "HTTP 404 Webhook Not Found", FIXED_NOW))
-                    .willReturn(3);
 
             DeliveryExecutionOutcome outcome = executor.executeDelivery(context, 1);
 
             assertThat(outcome).isEqualTo(DeliveryExecutionOutcome.PERMANENT_FAILURE);
-            then(deliveryRepository).should().recordPermanentFailure(notificationId, 1, "HTTP 404 Webhook Not Found", FIXED_NOW);
-            then(deliveryRepository).should().invalidateEndpointAndCancelPending(endpointId, "HTTP 404 Webhook Not Found", FIXED_NOW);
+            then(deliveryRepository).should().recordPermanentFailureAndInvalidateEndpoint(
+                    notificationId, 1, endpointId, "HTTP 404 Webhook Not Found", FIXED_NOW);
+            then(deliveryRepository).should(never()).recordPermanentFailure(any(), anyInt(), any(), any());
         }
 
         @Test
-        @DisplayName("does not invalidate endpoint if recordPermanentFailure returns false (stale worker)")
-        void doesNotInvalidateEndpointWhenPermanentFailureFencingFails() {
+        @DisplayName("returns FENCE_CONFLICT when recordPermanentFailureAndInvalidateEndpoint returns false (stale worker)")
+        void returnsFenceConflictWhenPermanentFailureWithInvalidationFails() {
             NotificationDeliveryContext context = createValidContext();
             given(channelSupportRegistry.hasSender(NotificationChannel.DISCORD)).willReturn(true);
             given(channelSupportRegistry.getSender(NotificationChannel.DISCORD)).willReturn(discordSender);
             given(alertMessageFactory.create(context)).willReturn(mockAlertMessage);
             given(discordSender.send(mockAlertMessage, destination))
                     .willReturn(new DeliveryResult.Permanent("HTTP 404 Webhook Not Found", true));
-            given(deliveryRepository.recordPermanentFailure(notificationId, 1, "HTTP 404 Webhook Not Found", FIXED_NOW))
+            given(deliveryRepository.recordPermanentFailureAndInvalidateEndpoint(
+                    notificationId, 1, endpointId, "HTTP 404 Webhook Not Found", FIXED_NOW))
                     .willReturn(false);
 
             DeliveryExecutionOutcome outcome = executor.executeDelivery(context, 1);
 
             assertThat(outcome).isEqualTo(DeliveryExecutionOutcome.FENCE_CONFLICT);
-            then(deliveryRepository).should(never()).invalidateEndpointAndCancelPending(any(), any(), any());
         }
     }
 
