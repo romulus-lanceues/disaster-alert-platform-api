@@ -9,7 +9,6 @@ import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventAlreadyExistsExcepti
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
 import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
-import dev.romulus_lanceues.tanaw_api.notification.NotificationAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.notification.NotificationNotFoundException;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpointNotFoundException;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.RateLimitExceededException;
@@ -181,19 +180,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem;
     }
 
-    @ExceptionHandler(NotificationAlreadyExistsException.class)
-    public ProblemDetail handleException(NotificationAlreadyExistsException ex) {
-        log.error(ex.getMessage(), ex);
-
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.CONFLICT,
-                ex.getMessage()
-        );
-
-        problem.setTitle("Notification Already Exists");
-
-        return problem;
-    }
 
     @ExceptionHandler(NotificationEndpointNotFoundException.class)
     public ProblemDetail handleException(NotificationEndpointNotFoundException ex) {
