@@ -19,6 +19,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -519,7 +520,41 @@ class NotificationDeliveryExecutorTest {
             assertThat(capturedReason)
                     .doesNotContain("SUPER_SECRET_TOKEN")
                     .doesNotContain("https://")
-                    .contains("502");
+                    .isEqualTo("HTTP 502 SERVER_ERROR");
+        }
+
+        @Test
+        @DisplayName("catches RestClientResponseException for 404 and safely records HTTP 404 WEBHOOK_NOT_FOUND")
+        void catchesRestClientResponseException404Safely() {
+            NotificationDeliveryContext context = createValidContext();
+            given(channelSupportRegistry.hasSender(NotificationChannel.DISCORD)).willReturn(true);
+            given(channelSupportRegistry.getSender(NotificationChannel.DISCORD)).willReturn(discordSender);
+            given(alertMessageFactory.create(context)).willReturn(mockAlertMessage);
+
+            RestClientResponseException restException = new RestClientResponseException(
+                    "404 Not Found: GET https://discord.com/api/webhooks/123/TOKEN",
+                    HttpStatusCode.valueOf(404),
+                    "Not Found",
+                    new HttpHeaders(),
+                    new byte[0],
+                    null
+            );
+            given(discordSender.send(mockAlertMessage, destination)).willThrow(restException);
+
+            given(retryPolicy.calculateNextAttempt(eq(1), any(), eq(FIXED_NOW))).willReturn(FIXED_NOW.plusSeconds(10));
+            given(retryPolicy.maxAttempts()).willReturn(5);
+            given(deliveryRepository.recordRetryableFailure(eq(notificationId), eq(1), anyString(), any(), eq(5), eq(FIXED_NOW)))
+                    .willReturn(true);
+
+            DeliveryExecutionOutcome outcome = executor.executeDelivery(context, 1);
+
+            assertThat(outcome).isEqualTo(DeliveryExecutionOutcome.RETRYABLE);
+
+            ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+            then(deliveryRepository).should().recordRetryableFailure(
+                    eq(notificationId), eq(1), reasonCaptor.capture(), any(), eq(5), eq(FIXED_NOW));
+
+            assertThat(reasonCaptor.getValue()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
         }
 
         @Test
@@ -549,7 +584,38 @@ class NotificationDeliveryExecutorTest {
             String capturedReason = reasonCaptor.getValue();
             assertThat(capturedReason)
                     .doesNotContain("SECRET")
-                    .doesNotContain("https://");
+                    .doesNotContain("https://")
+                    .isEqualTo("TIMEOUT");
+        }
+
+        @Test
+        @DisplayName("catches ResourceAccessException (connection refused) and records CONNECTION_ERROR")
+        void catchesConnectionRefusedSafely() {
+            NotificationDeliveryContext context = createValidContext();
+            given(channelSupportRegistry.hasSender(NotificationChannel.DISCORD)).willReturn(true);
+            given(channelSupportRegistry.getSender(NotificationChannel.DISCORD)).willReturn(discordSender);
+            given(alertMessageFactory.create(context)).willReturn(mockAlertMessage);
+
+            ResourceAccessException connException = new ResourceAccessException(
+                    "I/O error on POST request: Connection refused to https://discord.com/api/webhooks/123/SECRET",
+                    new IOException("Connection refused")
+            );
+            given(discordSender.send(mockAlertMessage, destination)).willThrow(connException);
+
+            given(retryPolicy.calculateNextAttempt(eq(1), any(), eq(FIXED_NOW))).willReturn(FIXED_NOW.plusSeconds(10));
+            given(retryPolicy.maxAttempts()).willReturn(5);
+            given(deliveryRepository.recordRetryableFailure(eq(notificationId), eq(1), anyString(), any(), eq(5), eq(FIXED_NOW)))
+                    .willReturn(true);
+
+            DeliveryExecutionOutcome outcome = executor.executeDelivery(context, 1);
+
+            assertThat(outcome).isEqualTo(DeliveryExecutionOutcome.RETRYABLE);
+
+            ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+            then(deliveryRepository).should().recordRetryableFailure(
+                    eq(notificationId), eq(1), reasonCaptor.capture(), any(), eq(5), eq(FIXED_NOW));
+
+            assertThat(reasonCaptor.getValue()).isEqualTo("CONNECTION_ERROR");
         }
 
         @Test
@@ -578,7 +644,7 @@ class NotificationDeliveryExecutorTest {
             String capturedReason = reasonCaptor.getValue();
             assertThat(capturedReason)
                     .doesNotContain("secret-123")
-                    .contains("IllegalStateException");
+                    .isEqualTo("UNEXPECTED_ERROR: IllegalStateException");
         }
     }
 }

@@ -216,7 +216,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Retryable.class);
         DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
         assertThat(retryable.retryAfter()).isEqualTo(Duration.ofMillis(3500));
-        assertThat(retryable.reason()).contains("429");
+        assertThat(retryable.reason()).isEqualTo("HTTP 429 RATE_LIMITED");
         assertThat(retryable.reason()).doesNotContain(SECRET_TOKEN);
 
         mockServer.verify();
@@ -237,7 +237,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Retryable.class);
         DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
         assertThat(retryable.retryAfter()).isEqualTo(Duration.ofMillis(2000));
-        assertThat(retryable.reason()).contains("429");
+        assertThat(retryable.reason()).isEqualTo("HTTP 429 RATE_LIMITED");
         assertThat(retryable.reason()).doesNotContain(SECRET_TOKEN);
 
         mockServer.verify();
@@ -258,7 +258,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Retryable.class);
         DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
         assertThat(retryable.retryAfter()).isNull();
-        assertThat(retryable.reason()).contains("429");
+        assertThat(retryable.reason()).isEqualTo("HTTP 429 RATE_LIMITED");
 
         mockServer.verify();
     }
@@ -278,7 +278,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Permanent.class);
         DeliveryResult.Permanent permanent = (DeliveryResult.Permanent) result;
         assertThat(permanent.invalidateEndpoint()).isTrue();
-        assertThat(permanent.reason()).contains("404");
+        assertThat(permanent.reason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
         assertThat(permanent.reason()).doesNotContain(SECRET_TOKEN);
 
         mockServer.verify();
@@ -299,7 +299,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Permanent.class);
         DeliveryResult.Permanent permanent = (DeliveryResult.Permanent) result;
         assertThat(permanent.invalidateEndpoint()).isTrue();
-        assertThat(permanent.reason()).contains("401");
+        assertThat(permanent.reason()).isEqualTo("HTTP 401 UNAUTHORIZED");
         assertThat(permanent.reason()).doesNotContain(SECRET_TOKEN);
 
         mockServer.verify();
@@ -320,7 +320,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Permanent.class);
         DeliveryResult.Permanent permanent = (DeliveryResult.Permanent) result;
         assertThat(permanent.invalidateEndpoint()).isFalse();
-        assertThat(permanent.reason()).contains("400");
+        assertThat(permanent.reason()).isEqualTo("HTTP 400 BAD_REQUEST");
         assertThat(permanent.reason()).doesNotContain(SECRET_TOKEN);
 
         mockServer.verify();
@@ -341,7 +341,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Retryable.class);
         DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
         assertThat(retryable.retryAfter()).isNull();
-        assertThat(retryable.reason()).contains("500");
+        assertThat(retryable.reason()).isEqualTo("HTTP 500 SERVER_ERROR");
         assertThat(retryable.reason()).doesNotContain(SECRET_TOKEN);
 
         mockServer.verify();
@@ -361,7 +361,7 @@ class DiscordNotificationSenderTest {
         DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
         assertThat(retryable.retryAfter()).isNull();
         assertThat(retryable.reason()).doesNotContain(SECRET_TOKEN);
-        assertThat(retryable.reason()).containsIgnoringCase("timed out");
+        assertThat(retryable.reason()).isEqualTo("TIMEOUT");
 
         mockServer.verify();
     }
@@ -380,7 +380,7 @@ class DiscordNotificationSenderTest {
         DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
         assertThat(retryable.retryAfter()).isNull();
         assertThat(retryable.reason()).doesNotContain(SECRET_TOKEN);
-        assertThat(retryable.reason()).containsIgnoringCase("Connection");
+        assertThat(retryable.reason()).isEqualTo("CONNECTION_ERROR");
 
         mockServer.verify();
     }
@@ -477,7 +477,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Permanent.class);
         DeliveryResult.Permanent permanent = (DeliveryResult.Permanent) result;
         assertThat(permanent.invalidateEndpoint()).isTrue();
-        assertThat(permanent.reason()).contains("403");
+        assertThat(permanent.reason()).isEqualTo("HTTP 403 FORBIDDEN");
         assertThat(permanent.reason()).doesNotContain(SECRET_TOKEN);
 
         mockServer.verify();
@@ -496,7 +496,7 @@ class DiscordNotificationSenderTest {
         assertThat(result).isInstanceOf(DeliveryResult.Retryable.class);
         DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
         assertThat(retryable.retryAfter()).isNull();
-        assertThat(retryable.reason()).contains("502");
+        assertThat(retryable.reason()).isEqualTo("HTTP 502 SERVER_ERROR");
 
         mockServer.verify();
     }
