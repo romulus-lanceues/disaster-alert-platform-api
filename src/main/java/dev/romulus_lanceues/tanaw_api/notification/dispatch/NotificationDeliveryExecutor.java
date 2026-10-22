@@ -242,12 +242,25 @@ public class NotificationDeliveryExecutor {
             DeliveryResult.Permanent permanent,
             Instant now
     ) {
-        boolean updated = deliveryRepository.recordPermanentFailure(
-                context.notificationId(),
-                attemptCount,
-                permanent.reason(),
-                now
-        );
+        boolean invalidateEndpoint = permanent.invalidateEndpoint() && context.isEndpointPresent();
+        boolean updated;
+
+        if (invalidateEndpoint) {
+            updated = deliveryRepository.recordPermanentFailureAndInvalidateEndpoint(
+                    context.notificationId(),
+                    attemptCount,
+                    context.endpointId(),
+                    permanent.reason(),
+                    now
+            );
+        } else {
+            updated = deliveryRepository.recordPermanentFailure(
+                    context.notificationId(),
+                    attemptCount,
+                    permanent.reason(),
+                    now
+            );
+        }
 
         if (!updated) {
             log.warn("Fenced permanent failure update failed for notification {} at attempt {}: already superseded or processed",
@@ -258,14 +271,9 @@ public class NotificationDeliveryExecutor {
         log.warn("Permanent failure recorded for notification {} (alertId={}, channel={}): {}",
                 context.notificationId(), context.alertId(), context.channel(), permanent.reason());
 
-        if (permanent.invalidateEndpoint() && context.isEndpointPresent()) {
-            int cancelledCount = deliveryRepository.invalidateEndpointAndCancelPending(
-                    context.endpointId(),
-                    permanent.reason(),
-                    now
-            );
-            log.warn("Disabled endpoint {} and cancelled {} pending notification(s) due to permanent failure: {}",
-                    context.endpointId(), cancelledCount, permanent.reason());
+        if (invalidateEndpoint) {
+            log.warn("Disabled endpoint {} and cancelled pending notification(s) due to permanent failure: {}",
+                    context.endpointId(), permanent.reason());
         }
 
         return DeliveryExecutionOutcome.PERMANENT_FAILURE;

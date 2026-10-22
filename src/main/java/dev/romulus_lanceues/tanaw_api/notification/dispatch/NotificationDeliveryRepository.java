@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import dev.romulus_lanceues.tanaw_api.user.UserStatus;
 
@@ -421,6 +422,8 @@ public class NotificationDeliveryRepository {
             return false;
         }
 
+        String notifReason = truncate(reason, 500);
+
         String sql = """
                 UPDATE notifications
                 SET status = 'FAILED',
@@ -435,7 +438,7 @@ public class NotificationDeliveryRepository {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("claimedAttempt", claimedAttempt)
-                .addValue("reason", reason)
+                .addValue("reason", notifReason)
                 .addValue("now", Timestamp.from(now));
 
         return jdbc.update(sql, params) > 0;
@@ -446,9 +449,8 @@ public class NotificationDeliveryRepository {
             return 0;
         }
 
-        String endpointReason = (reason != null && reason.length() > 100)
-                ? reason.substring(0, 100)
-                : reason;
+        String endpointReason = truncate(reason, 100);
+        String notifReason = truncate(reason, 500);
 
         String updateEndpointSql = """
                 UPDATE notification_endpoints
@@ -477,9 +479,90 @@ public class NotificationDeliveryRepository {
 
         MapSqlParameterSource notifParams = new MapSqlParameterSource()
                 .addValue("endpointId", endpointId)
-                .addValue("reason", reason)
+                .addValue("reason", notifReason)
                 .addValue("now", Timestamp.from(now));
 
         return jdbc.update(cancelPendingSql, notifParams);
+    }
+
+    @Transactional
+    public boolean recordPermanentFailureAndInvalidateEndpoint(
+            UUID notificationId,
+            int claimedAttempt,
+            UUID endpointId,
+            String reason,
+            Instant now
+    ) {
+        if (notificationId == null || now == null) {
+            return false;
+        }
+
+        String notifReason = truncate(reason, 500);
+        String endpointReason = truncate(reason, 100);
+
+        String sql = """
+                UPDATE notifications
+                SET status = 'FAILED',
+                    failure_reason = :reason,
+                    locked_until = NULL,
+                    updated_at = :now
+                WHERE id = :id
+                  AND status = 'PROCESSING'
+                  AND attempt_count = :claimedAttempt
+                """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", notificationId)
+                .addValue("claimedAttempt", claimedAttempt)
+                .addValue("reason", notifReason)
+                .addValue("now", Timestamp.from(now));
+
+        int rowsUpdated = jdbc.update(sql, params);
+        if (rowsUpdated == 0) {
+            return false;
+        }
+
+        if (endpointId != null) {
+            String updateEndpointSql = """
+                    UPDATE notification_endpoints
+                    SET enabled = FALSE,
+                        disabled_reason = :reason,
+                        updated_at = :now
+                    WHERE id = :endpointId
+                    """;
+
+            MapSqlParameterSource endpointParams = new MapSqlParameterSource()
+                    .addValue("endpointId", endpointId)
+                    .addValue("reason", endpointReason)
+                    .addValue("now", Timestamp.from(now));
+
+            jdbc.update(updateEndpointSql, endpointParams);
+
+            String cancelPendingSql = """
+                    UPDATE notifications
+                    SET status = 'CANCELLED',
+                        failure_reason = :reason,
+                        locked_until = NULL,
+                        updated_at = :now
+                    WHERE endpoint_id = :endpointId
+                      AND status = 'PENDING'
+                    """;
+
+            MapSqlParameterSource cancelParams = new MapSqlParameterSource()
+                    .addValue("endpointId", endpointId)
+                    .addValue("reason", notifReason)
+                    .addValue("now", Timestamp.from(now));
+
+            jdbc.update(cancelPendingSql, cancelParams);
+        }
+
+        return true;
+    }
+
+    private static String truncate(String text, int maxLength) {
+        if (text == null) {
+            return null;
+        }
+        return text.length() <= maxLength ? text : text.substring(0, maxLength);
     }
 }
