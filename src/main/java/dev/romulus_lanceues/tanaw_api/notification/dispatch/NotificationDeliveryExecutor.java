@@ -154,12 +154,46 @@ public class NotificationDeliveryExecutor {
 
     private String sanitizeExceptionReason(Throwable ex) {
         if (ex instanceof RestClientResponseException restEx) {
-            return "HTTP " + restEx.getStatusCode().value() + " error during dispatch";
+            int status = restEx.getStatusCode().value();
+            if (status == 429) {
+                return "HTTP 429 RATE_LIMITED";
+            }
+            if (status == 404) {
+                return "HTTP 404 WEBHOOK_NOT_FOUND";
+            }
+            if (status == 401) {
+                return "HTTP 401 UNAUTHORIZED";
+            }
+            if (status == 403) {
+                return "HTTP 403 FORBIDDEN";
+            }
+            if (status == 400) {
+                return "HTTP 400 BAD_REQUEST";
+            }
+            if (status >= 400 && status < 500) {
+                return "HTTP " + status + " CLIENT_ERROR";
+            }
+            if (status >= 500 && status < 600) {
+                return "HTTP " + status + " SERVER_ERROR";
+            }
+            return "HTTP " + status + " ERROR";
         }
-        if (ex instanceof ResourceAccessException) {
-            return "Network timeout or I/O error during dispatch";
+        if (ex instanceof ResourceAccessException accessEx) {
+            if (isTimeoutException(accessEx)) {
+                return "TIMEOUT";
+            }
+            return "CONNECTION_ERROR";
         }
-        return "Unexpected dispatch error: " + ex.getClass().getSimpleName();
+        return "UNEXPECTED_ERROR: " + ex.getClass().getSimpleName();
+    }
+
+    private static boolean isTimeoutException(ResourceAccessException ex) {
+        Throwable cause = ex.getCause();
+        if (cause instanceof java.net.SocketTimeoutException) {
+            return true;
+        }
+        String msg = ex.getMessage();
+        return msg != null && msg.toLowerCase(java.util.Locale.ROOT).contains("timed out");
     }
 
     private DeliveryExecutionOutcome coordinateOutcome(

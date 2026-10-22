@@ -140,13 +140,23 @@ public class DiscordNotificationSender implements NotificationSender {
         } catch (ResourceAccessException ex) {
             log.warn("Discord webhook connection failed or timed out for destination {}: {}",
                     masker.mask(NotificationChannel.DISCORD, trimmedDestination), ex.getClass().getSimpleName());
-            return new DeliveryResult.Retryable("Connection timed out or unreachable");
+            boolean isTimeout = isTimeoutException(ex);
+            return new DeliveryResult.Retryable(isTimeout ? "TIMEOUT" : "CONNECTION_ERROR");
 
         } catch (Exception ex) {
             log.warn("Unexpected error during Discord webhook delivery for destination {}: {}",
                     masker.mask(NotificationChannel.DISCORD, trimmedDestination), ex.getClass().getSimpleName());
-            return new DeliveryResult.Retryable("Unexpected communication error: " + ex.getClass().getSimpleName());
+            return new DeliveryResult.Retryable("UNEXPECTED_ERROR: " + ex.getClass().getSimpleName());
         }
+    }
+
+    private static boolean isTimeoutException(ResourceAccessException ex) {
+        Throwable cause = ex.getCause();
+        if (cause instanceof java.net.SocketTimeoutException) {
+            return true;
+        }
+        String msg = ex.getMessage();
+        return msg != null && msg.toLowerCase(Locale.ROOT).contains("timed out");
     }
 
     private DiscordPayload buildPayload(AlertMessage message) {
@@ -263,34 +273,34 @@ public class DiscordNotificationSender implements NotificationSender {
     ) {
         if (statusCode == HttpStatus.TOO_MANY_REQUESTS.value()) { // 429
             Duration retryAfter = parseRetryAfter(headers, responseBody);
-            return new DeliveryResult.Retryable("HTTP 429 Rate limited", retryAfter);
+            return new DeliveryResult.Retryable("HTTP 429 RATE_LIMITED", retryAfter);
         }
 
         if (statusCode == HttpStatus.NOT_FOUND.value()) { // 404
-            return new DeliveryResult.Permanent("HTTP 404 Webhook Not Found", true);
+            return new DeliveryResult.Permanent("HTTP 404 WEBHOOK_NOT_FOUND", true);
         }
 
         if (statusCode == HttpStatus.UNAUTHORIZED.value()) { // 401
-            return new DeliveryResult.Permanent("HTTP 401 Unauthorized", true);
+            return new DeliveryResult.Permanent("HTTP 401 UNAUTHORIZED", true);
         }
 
         if (statusCode == HttpStatus.FORBIDDEN.value()) { // 403
-            return new DeliveryResult.Permanent("HTTP 403 Forbidden", true);
+            return new DeliveryResult.Permanent("HTTP 403 FORBIDDEN", true);
         }
 
         if (statusCode == HttpStatus.BAD_REQUEST.value()) { // 400
-            return new DeliveryResult.Permanent("HTTP 400 Bad Request", false);
+            return new DeliveryResult.Permanent("HTTP 400 BAD_REQUEST", false);
         }
 
         if (statusCode >= 400 && statusCode < 500) {
-            return new DeliveryResult.Permanent("HTTP " + statusCode + " Client Error", false);
+            return new DeliveryResult.Permanent("HTTP " + statusCode + " CLIENT_ERROR", false);
         }
 
         if (statusCode >= 500 && statusCode < 600) {
-            return new DeliveryResult.Retryable("HTTP " + statusCode + " Discord Server Error");
+            return new DeliveryResult.Retryable("HTTP " + statusCode + " SERVER_ERROR");
         }
 
-        return new DeliveryResult.Retryable("HTTP " + statusCode + " Unexpected Response");
+        return new DeliveryResult.Retryable("HTTP " + statusCode + " UNEXPECTED_RESPONSE");
     }
 
     private Duration parseRetryAfter(HttpHeaders headers, String responseBody) {
