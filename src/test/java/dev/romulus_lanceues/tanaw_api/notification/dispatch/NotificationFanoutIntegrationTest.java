@@ -102,7 +102,17 @@ class NotificationFanoutIntegrationTest {
                 public void verify(String destination) {
                 }
             };
-            return new ChannelSupportRegistry(List.of(discordVerifier), List.of());
+            ChannelVerifier emailVerifier = new ChannelVerifier() {
+                @Override
+                public NotificationChannel channel() {
+                    return NotificationChannel.EMAIL;
+                }
+
+                @Override
+                public void verify(String destination) {
+                }
+            };
+            return new ChannelSupportRegistry(List.of(discordVerifier, emailVerifier), List.of());
         }
 
         @Bean
@@ -186,6 +196,205 @@ class NotificationFanoutIntegrationTest {
         Alert cancelledAlert = entityManager.find(Alert.class, alert.getId());
         assertThat(cancelledAlert.getStatus()).isEqualTo(AlertStatus.CANCELLED);
         assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("skips disabled endpoints during fanout and creates no notifications")
+    void skipsDisabledEndpointsDuringFanout() {
+        persistEndpoint(primaryUser, NotificationChannel.DISCORD, "Discord ...disabled", false, FIXED_NOW);
+
+        DisasterEvent recentEvent = persistDisasterEvent(
+                "USGS",
+                "eq-disabled-ep-" + UUID.randomUUID(),
+                FIXED_NOW.minus(30, ChronoUnit.MINUTES)
+        );
+        Alert alert = persistAlert(recentEvent, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+
+        FanoutResult result = fanoutService.fanout();
+
+        assertThat(result.alertsClaimed()).isEqualTo(1);
+        assertThat(result.alertsProcessed()).isEqualTo(1);
+        assertThat(result.notificationsCreated()).isZero();
+
+        entityManager.clear();
+        Alert processedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(processedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("skips unverified endpoints during fanout and creates no notifications")
+    void skipsUnverifiedEndpointsDuringFanout() {
+        persistEndpoint(primaryUser, NotificationChannel.DISCORD, "Discord ...unverified", true, null);
+
+        DisasterEvent recentEvent = persistDisasterEvent(
+                "USGS",
+                "eq-unverified-ep-" + UUID.randomUUID(),
+                FIXED_NOW.minus(30, ChronoUnit.MINUTES)
+        );
+        Alert alert = persistAlert(recentEvent, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+
+        FanoutResult result = fanoutService.fanout();
+
+        assertThat(result.alertsClaimed()).isEqualTo(1);
+        assertThat(result.alertsProcessed()).isEqualTo(1);
+        assertThat(result.notificationsCreated()).isZero();
+
+        entityManager.clear();
+        Alert processedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(processedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("skips unsupported channel endpoints during fanout and creates no notifications")
+    void skipsUnsupportedChannelsDuringFanout() {
+        // TELEGRAM is not registered in TestFanoutConfig channelSupportRegistry
+        persistEndpoint(primaryUser, NotificationChannel.TELEGRAM, "@tanaw_user", true, FIXED_NOW);
+
+        DisasterEvent recentEvent = persistDisasterEvent(
+                "USGS",
+                "eq-unsupported-ch-" + UUID.randomUUID(),
+                FIXED_NOW.minus(30, ChronoUnit.MINUTES)
+        );
+        Alert alert = persistAlert(recentEvent, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+
+        FanoutResult result = fanoutService.fanout();
+
+        assertThat(result.alertsClaimed()).isEqualTo(1);
+        assertThat(result.alertsProcessed()).isEqualTo(1);
+        assertThat(result.notificationsCreated()).isZero();
+
+        entityManager.clear();
+        Alert processedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(processedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("skips disabled users during fanout and creates no notifications")
+    void skipsInactiveUsersDuringFanout() {
+        User disabledUser = persistUser("disabled-user-" + UUID.randomUUID() + "@example.com", UserStatus.DISABLED);
+        Location disabledLocation = persistLocation(disabledUser, "Workplace", 14.6000, 120.9900);
+        AlertRule disabledRule = persistAlertRule(disabledLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
+        persistEndpoint(disabledUser, NotificationChannel.DISCORD, "Discord ...disabled", true, FIXED_NOW);
+
+        DisasterEvent recentEvent = persistDisasterEvent(
+                "USGS",
+                "eq-disabled-user-" + UUID.randomUUID(),
+                FIXED_NOW.minus(30, ChronoUnit.MINUTES)
+        );
+        Alert alert = persistAlert(recentEvent, disabledRule, AlertStatus.PENDING, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+
+        FanoutResult result = fanoutService.fanout();
+
+        assertThat(result.alertsClaimed()).isEqualTo(1);
+        assertThat(result.alertsProcessed()).isEqualTo(1);
+        assertThat(result.notificationsCreated()).isZero();
+
+        entityManager.clear();
+        Alert processedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(processedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("creates one notification per eligible endpoint for the user")
+    void createsOneNotificationPerEligibleEndpoint() {
+        persistEndpoint(primaryUser, NotificationChannel.DISCORD, "Discord ...1234", true, FIXED_NOW);
+        persistEndpoint(primaryUser, NotificationChannel.EMAIL, "u***@example.com", true, FIXED_NOW);
+
+        DisasterEvent recentEvent = persistDisasterEvent(
+                "USGS",
+                "eq-multi-ep-" + UUID.randomUUID(),
+                FIXED_NOW.minus(30, ChronoUnit.MINUTES)
+        );
+        Alert alert = persistAlert(recentEvent, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+
+        FanoutResult result = fanoutService.fanout();
+
+        assertThat(result.alertsClaimed()).isEqualTo(1);
+        assertThat(result.alertsProcessed()).isEqualTo(1);
+        assertThat(result.notificationsCreated()).isEqualTo(2);
+
+        entityManager.clear();
+        List<Notification> notifications = notificationRepository.findAll();
+        assertThat(notifications).hasSize(2);
+        assertThat(notifications).extracting(Notification::getChannel)
+                .containsExactlyInAnyOrder(NotificationChannel.DISCORD, NotificationChannel.EMAIL);
+        assertThat(notifications).allSatisfy(n -> {
+            assertThat(n.getAlert().getId()).isEqualTo(alert.getId());
+            assertThat(n.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        });
+    }
+
+    @Test
+    @DisplayName("re-running fan-out produces no duplicates and processes zero new alerts")
+    void reRunningFanoutProducesNoDuplicates() {
+        persistEndpoint(primaryUser, NotificationChannel.DISCORD, "Discord ...1234", true, FIXED_NOW);
+
+        DisasterEvent recentEvent = persistDisasterEvent(
+                "USGS",
+                "eq-idempotent-" + UUID.randomUUID(),
+                FIXED_NOW.minus(30, ChronoUnit.MINUTES)
+        );
+        persistAlert(recentEvent, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+
+        FanoutResult firstRun = fanoutService.fanout();
+        assertThat(firstRun.alertsClaimed()).isEqualTo(1);
+        assertThat(firstRun.alertsProcessed()).isEqualTo(1);
+        assertThat(firstRun.notificationsCreated()).isEqualTo(1);
+
+        // Immediate second run
+        FanoutResult secondRun = fanoutService.fanout();
+        assertThat(secondRun.alertsClaimed()).isZero();
+        assertThat(secondRun.alertsProcessed()).isZero();
+        assertThat(secondRun.notificationsCreated()).isZero();
+
+        List<Notification> allNotifications = notificationRepository.findAll();
+        assertThat(allNotifications).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("unique constraint uk_disaster_source_external prevents duplicate events with same source and externalId")
+    void duplicatePreventionOnDisasterEventSourceAndExternalId() {
+        String externalId = "usgs-revised-quake-" + UUID.randomUUID();
+        DisasterEvent initialEvent = persistDisasterEvent("USGS", externalId, FIXED_NOW.minus(30, ChronoUnit.MINUTES));
+
+        DisasterEvent duplicateEvent = DisasterEvent.builder()
+                .source("USGS")
+                .externalId(externalId)
+                .disasterType(DisasterType.EARTHQUAKE)
+                .occurredAt(initialEvent.getOccurredAt())
+                .sourceUpdatedAt(FIXED_NOW.minus(5, ChronoUnit.MINUTES))
+                .status("reviewed")
+                .place("Manila")
+                .severity("HIGH")
+                .build();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> {
+            entityManager.persistAndFlush(duplicateEvent);
+        }).isInstanceOf(org.hibernate.exception.ConstraintViolationException.class)
+                .hasMessageContaining("uk_disaster_source_external");
+    }
+
+    @Test
+    @DisplayName("unique constraint uk_alert_event_rule prevents duplicate alerts for the same event and rule")
+    void duplicatePreventionOnAlertEventAndRule() {
+        DisasterEvent event = persistDisasterEvent("USGS", "usgs-alert-dup-" + UUID.randomUUID(), FIXED_NOW.minus(30, ChronoUnit.MINUTES));
+        persistAlert(event, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+
+        Alert duplicateAlert = Alert.builder()
+                .disasterEvent(event)
+                .alertRule(primaryRule)
+                .status(AlertStatus.PENDING)
+                .triggeredAt(FIXED_NOW)
+                .build();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> {
+            entityManager.persistAndFlush(duplicateAlert);
+        }).isInstanceOf(org.hibernate.exception.ConstraintViolationException.class)
+                .hasMessageContaining("uk_alert_event_rule");
     }
 
     private User persistUser(String email, UserStatus status) {
