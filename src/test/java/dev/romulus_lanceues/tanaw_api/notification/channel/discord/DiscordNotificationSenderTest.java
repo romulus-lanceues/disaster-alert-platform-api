@@ -502,6 +502,61 @@ class DiscordNotificationSenderTest {
     }
 
     @Test
+    @DisplayName("HTTP 503 Service Unavailable returns Retryable")
+    void http503ReturnsRetryable() {
+        mockServer.expect(requestTo(EXPECTED_REQUEST_URI))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        DiscordNotificationSender sender = createSender(false);
+        DeliveryResult result = sender.send(createSampleMessage("HIGH"), BASE_WEBHOOK);
+
+        assertThat(result).isInstanceOf(DeliveryResult.Retryable.class);
+        DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
+        assertThat(retryable.retryAfter()).isNull();
+        assertThat(retryable.reason()).isEqualTo("HTTP 503 SERVER_ERROR");
+
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("HTTP 504 Gateway Timeout returns Retryable")
+    void http504ReturnsRetryable() {
+        mockServer.expect(requestTo(EXPECTED_REQUEST_URI))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.GATEWAY_TIMEOUT));
+
+        DiscordNotificationSender sender = createSender(false);
+        DeliveryResult result = sender.send(createSampleMessage("HIGH"), BASE_WEBHOOK);
+
+        assertThat(result).isInstanceOf(DeliveryResult.Retryable.class);
+        DeliveryResult.Retryable retryable = (DeliveryResult.Retryable) result;
+        assertThat(retryable.retryAfter()).isNull();
+        assertThat(retryable.reason()).isEqualTo("HTTP 504 SERVER_ERROR");
+
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("HTTP 405 Method Not Allowed returns Permanent with invalidateEndpoint = false")
+    void http405ReturnsPermanentClientError() {
+        mockServer.expect(requestTo(EXPECTED_REQUEST_URI))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.METHOD_NOT_ALLOWED));
+
+        DiscordNotificationSender sender = createSender(false);
+        DeliveryResult result = sender.send(createSampleMessage("HIGH"), BASE_WEBHOOK);
+
+        assertThat(result).isInstanceOf(DeliveryResult.Permanent.class);
+        DeliveryResult.Permanent permanent = (DeliveryResult.Permanent) result;
+        assertThat(permanent.invalidateEndpoint()).isFalse();
+        assertThat(permanent.reason()).isEqualTo("HTTP 405 CLIENT_ERROR");
+        assertThat(permanent.reason()).doesNotContain(SECRET_TOKEN);
+
+        mockServer.verify();
+    }
+
+    @Test
     @DisplayName("Destination with leading and trailing whitespace is trimmed and delivered successfully")
     void destinationWithWhitespaceIsTrimmed() {
         mockServer.expect(requestTo(EXPECTED_REQUEST_URI))
