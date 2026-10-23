@@ -291,6 +291,108 @@ class NotificationDeliveryExecutorIntegrationTest {
         assertThat(updated.getAttemptCount()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("rejects stale worker after lease has expired and been reaped, preserving reaped state and alert")
+    void rejectsStaleWorkerAfterLeaseExpiredAndReaped() {
+        String rawWebhook = "https://discord.com/api/webhooks/123/valid-token";
+        NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, rawWebhook, "hint-reap", true, FIXED_NOW.minusSeconds(3600));
+        Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, FIXED_NOW);
+        Notification notification = persistNotification(alert, endpoint, NotificationChannel.DISCORD, "hint-reap");
+
+        // 1. Worker claims notification with 2-minute lease (attempt_count = 1, status = PROCESSING)
+        List<ClaimedNotification> claimed = deliveryRepository.claimPendingNotifications(1, FIXED_NOW, Duration.ofMinutes(2));
+        assertThat(claimed).hasSize(1);
+        ClaimedNotification claim = claimed.get(0);
+
+        List<NotificationDeliveryContext> contexts = deliveryRepository.findDeliveryContexts(List.of(claim.id()));
+        assertThat(contexts).hasSize(1);
+
+        // 2. Time advances past lease expiration; reaper runs and reclaims row back to PENDING
+        Instant reapTime = FIXED_NOW.plus(Duration.ofMinutes(5));
+        int reaped = deliveryRepository.reapExpiredLeases(reapTime, 5);
+        assertThat(reaped).isEqualTo(1);
+
+        // 3. Stale worker finishes outbound call and attempts to record success
+        given(discordSender.send(any(), eq(rawWebhook))).willReturn(new DeliveryResult.Sent("msg-stale-after-reap"));
+
+        DeliveryExecutionOutcome outcome = executor.executeDelivery(claim, contexts.get(0));
+        assertThat(outcome).isEqualTo(DeliveryExecutionOutcome.FENCE_CONFLICT);
+
+        // 4. Verify database row preserved in reaped PENDING state with 0 mutations from stale worker
+        entityManager.clear();
+        Notification reloadedNotification = notificationRepository.findById(notification.getId()).orElseThrow();
+        assertThat(reloadedNotification.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        assertThat(reloadedNotification.getProviderMessageId()).isNull();
+        assertThat(reloadedNotification.getFailureReason()).isEqualTo("Lease expired; returned to queue");
+        assertThat(reloadedNotification.getLockedUntil()).isNull();
+        assertThat(reloadedNotification.getAttemptCount()).isEqualTo(1);
+
+        // Verify parent alert remains untouched in PROCESSED status
+        Alert reloadedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(reloadedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+    }
+
+    @Test
+    @DisplayName("provider failure isolates error to notification and leaves alert PROCESSED and unmodified")
+    void providerFailureLeavesAlertProcessedAndUnmodified() {
+        String rawWebhook = "https://discord.com/api/webhooks/123/valid-token";
+        NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, rawWebhook, "hint-isolation", true, FIXED_NOW.minusSeconds(3600));
+        Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, FIXED_NOW);
+        Notification notification = persistNotification(alert, endpoint, NotificationChannel.DISCORD, "hint-isolation");
+
+        List<ClaimedNotification> claimed = deliveryRepository.claimPendingNotifications(1, FIXED_NOW, Duration.ofMinutes(2));
+        ClaimedNotification claim = claimed.get(0);
+        List<NotificationDeliveryContext> contexts = deliveryRepository.findDeliveryContexts(List.of(claim.id()));
+
+        // Transient failure
+        given(discordSender.send(any(), eq(rawWebhook)))
+                .willReturn(new DeliveryResult.Retryable("HTTP 503 SERVICE_UNAVAILABLE", Duration.ofSeconds(20)));
+
+        DeliveryExecutionOutcome outcome = executor.executeDelivery(claim, contexts.get(0));
+        assertThat(outcome).isEqualTo(DeliveryExecutionOutcome.RETRYABLE);
+
+        entityManager.clear();
+        Notification updatedNotification = notificationRepository.findById(notification.getId()).orElseThrow();
+        assertThat(updatedNotification.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        assertThat(updatedNotification.getFailureReason()).isEqualTo("HTTP 503 SERVICE_UNAVAILABLE");
+
+        // Verify alert remains PROCESSED without rollback or mutation
+        Alert reloadedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(reloadedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        assertThat(reloadedAlert.getDisasterEvent().getId()).isEqualTo(primaryDisasterEvent.getId());
+    }
+
+    @Test
+    @DisplayName("unexpected sender exception is sanitized to retryable failure and alert remains PROCESSED")
+    void unexpectedSenderExceptionSanitizedAndAlertUnaffected() {
+        String rawWebhook = "https://discord.com/api/webhooks/123/sensitive-token-999";
+        NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, rawWebhook, "hint-exception", true, FIXED_NOW.minusSeconds(3600));
+        Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, FIXED_NOW);
+        Notification notification = persistNotification(alert, endpoint, NotificationChannel.DISCORD, "hint-exception");
+
+        List<ClaimedNotification> claimed = deliveryRepository.claimPendingNotifications(1, FIXED_NOW, Duration.ofMinutes(2));
+        ClaimedNotification claim = claimed.get(0);
+        List<NotificationDeliveryContext> contexts = deliveryRepository.findDeliveryContexts(List.of(claim.id()));
+
+        // Sender throws exception containing sensitive URL
+        given(discordSender.send(any(), eq(rawWebhook)))
+                .willThrow(new org.springframework.web.client.ResourceAccessException("Connect to " + rawWebhook + " timed out"));
+
+        DeliveryExecutionOutcome outcome = executor.executeDelivery(claim, contexts.get(0));
+        assertThat(outcome).isEqualTo(DeliveryExecutionOutcome.RETRYABLE);
+
+        entityManager.clear();
+        Notification updatedNotification = notificationRepository.findById(notification.getId()).orElseThrow();
+        assertThat(updatedNotification.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        // Ensure sensitive token/URL is strictly NOT in failureReason
+        assertThat(updatedNotification.getFailureReason()).isEqualTo("TIMEOUT");
+        assertThat(updatedNotification.getFailureReason()).doesNotContain("sensitive-token");
+        assertThat(updatedNotification.getFailureReason()).doesNotContain("discord.com");
+
+        Alert reloadedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(reloadedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+    }
+
     // Helper persistence methods matching NotificationDeliveryRepositoryTest conventions
 
     private User persistUser(String email, UserStatus status) {
