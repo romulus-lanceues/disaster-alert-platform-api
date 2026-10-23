@@ -55,18 +55,22 @@ public class AlertMessageFactory {
                 ? context.place().trim()
                 : "Unknown location";
 
+        String severity = (context.severity() != null && !context.severity().isBlank())
+                ? context.severity().trim()
+                : "UNKNOWN";
+
+        String eventStatus = (context.eventStatus() != null && !context.eventStatus().isBlank())
+                ? context.eventStatus().trim()
+                : null;
+
         Double distanceKm = context.distanceKm();
         String formattedDistance = formatDistance(distanceKm, locationName);
-        String title = formatTitle(magnitude, formattedMagnitude, distanceKm, locationName);
+        String title = formatTitle(magnitude, formattedMagnitude, distanceKm, locationName, place, eventStatus, severity);
 
         Double depthKm = context.depthKm();
         String formattedDepth = (depthKm != null)
                 ? String.format(Locale.US, "%.1f km", depthKm)
                 : "Unknown";
-
-        String severity = (context.severity() != null && !context.severity().isBlank())
-                ? context.severity().trim()
-                : "UNKNOWN";
 
         String formattedTimeManila;
         String formattedTimeUtc;
@@ -78,9 +82,6 @@ public class AlertMessageFactory {
             formattedTimeUtc = "Unknown";
         }
 
-        String eventStatus = (context.eventStatus() != null && !context.eventStatus().isBlank())
-                ? context.eventStatus().trim()
-                : null;
         String reviewNotice = (eventStatus != null && eventStatus.equalsIgnoreCase("automatic"))
                 ? AUTOMATIC_REVIEW_NOTICE
                 : null;
@@ -110,7 +111,15 @@ public class AlertMessageFactory {
         );
     }
 
-    private String formatTitle(Double magnitude, String formattedMagnitude, Double distanceKm, String locationName) {
+    private String formatTitle(
+            Double magnitude,
+            String formattedMagnitude,
+            Double distanceKm,
+            String locationName,
+            String place,
+            String eventStatus,
+            String severity
+    ) {
         String prefix = (magnitude != null)
                 ? formattedMagnitude + " earthquake"
                 : "Earthquake";
@@ -125,13 +134,25 @@ public class AlertMessageFactory {
             suffix = locationName;
         }
 
+        String rawTitle;
         if (suffix != null) {
-            return prefix + " — " + suffix;
+            rawTitle = prefix + " — " + suffix;
+        } else if (magnitude != null) {
+            rawTitle = prefix;
+        } else {
+            rawTitle = "Earthquake alert";
         }
-        if (magnitude != null) {
-            return prefix;
+
+        boolean isTest = (place != null && place.trim().toUpperCase(Locale.ROOT).startsWith("[TEST]"))
+                || (locationName != null && locationName.trim().toUpperCase(Locale.ROOT).startsWith("[TEST]"))
+                || (eventStatus != null && eventStatus.trim().equalsIgnoreCase("test"))
+                || (severity != null && severity.trim().equalsIgnoreCase("test"));
+
+        if (isTest && !rawTitle.toUpperCase(Locale.ROOT).startsWith("[TEST]")) {
+            return "[TEST] " + rawTitle;
         }
-        return "Earthquake alert";
+
+        return rawTitle;
     }
 
     private String formatDistance(Double distanceKm, String locationName) {

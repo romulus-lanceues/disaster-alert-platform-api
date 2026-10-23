@@ -226,6 +226,53 @@ class AlertMessageFactoryTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("NotificationDeliveryContext must not be null");
         }
+
+        @Test
+        @DisplayName("Prefixes title with [TEST] when place starts with [TEST]")
+        void prefixesTitleWhenPlaceStartsTest() {
+            NotificationDeliveryContext context = new NotificationDeliveryContext(
+                    UUID.randomUUID(), UUID.randomUUID(), NotificationChannel.DISCORD,
+                    "https://discord.com/webhook", "hint",
+                    UUID.randomUUID(), true, FIXED_NOW,
+                    UUID.randomUUID(), UserStatus.ACTIVE,
+                    "Home", "[TEST] 10 km SW of Manila",
+                    Instant.parse("2026-10-17T08:00:00Z"), "reviewed", "MODERATE",
+                    "https://usgs.gov", 5.2, 10.0, 15.0
+            );
+
+            AlertMessage message = factory.create(context);
+            assertThat(message.title()).isEqualTo("[TEST] M5.2 earthquake — 15 km from Home");
+        }
+
+        @Test
+        @DisplayName("Prefixes title with [TEST] when eventStatus is test or severity is test")
+        void prefixesTitleWhenStatusOrSeverityIsTest() {
+            NotificationDeliveryContext contextStatus = new NotificationDeliveryContext(
+                    UUID.randomUUID(), UUID.randomUUID(), NotificationChannel.DISCORD,
+                    "https://discord.com/webhook", "hint",
+                    UUID.randomUUID(), true, FIXED_NOW,
+                    UUID.randomUUID(), UserStatus.ACTIVE,
+                    "Home", "10 km SW of Manila",
+                    Instant.parse("2026-10-17T08:00:00Z"), "test", "MODERATE",
+                    "https://usgs.gov", 5.2, 10.0, 15.0
+            );
+
+            AlertMessage messageStatus = factory.create(contextStatus);
+            assertThat(messageStatus.title()).isEqualTo("[TEST] M5.2 earthquake — 15 km from Home");
+
+            NotificationDeliveryContext contextSeverity = new NotificationDeliveryContext(
+                    UUID.randomUUID(), UUID.randomUUID(), NotificationChannel.DISCORD,
+                    "https://discord.com/webhook", "hint",
+                    UUID.randomUUID(), true, FIXED_NOW,
+                    UUID.randomUUID(), UserStatus.ACTIVE,
+                    "Home", "10 km SW of Manila",
+                    Instant.parse("2026-10-17T08:00:00Z"), "reviewed", "TEST",
+                    "https://usgs.gov", 5.2, 10.0, 15.0
+            );
+
+            AlertMessage messageSeverity = factory.create(contextSeverity);
+            assertThat(messageSeverity.title()).isEqualTo("[TEST] M5.2 earthquake — 15 km from Home");
+        }
     }
 
     private NotificationDeliveryContext createContextWithStatus(String eventStatus) {
