@@ -81,6 +81,19 @@ class UntrustedContentEscaperTest {
 
             assertThat(escaped).isEqualTo("24 km SSW of Balangiga, Philippines");
         }
+
+        @Test
+        @DisplayName("Neutralizes Discord user and role mention tags with backslashes and zero-width spaces")
+        void neutralizesDiscordMentionTags() {
+            String input = "<@1234567890> and <@!1234567890> and <@&9876543210>";
+            String escaped = UntrustedContentEscaper.escapeDiscordMarkdown(input);
+
+            assertThat(escaped)
+                    .doesNotContain("<@1234567890>")
+                    .doesNotContain("<@!1234567890>")
+                    .doesNotContain("<@&9876543210>")
+                    .isEqualTo("\\<@\u200B1234567890\\> and \\<@\u200B!1234567890\\> and \\<@\u200B&9876543210\\>");
+        }
     }
 
     @Nested
