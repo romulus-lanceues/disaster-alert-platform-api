@@ -76,3 +76,6 @@ build/
 .env
 .env.*
 !.env.example
+
+### Development Configurations ###
+src/main/java/dev/romulus_lanceues/tanaw_api/dev

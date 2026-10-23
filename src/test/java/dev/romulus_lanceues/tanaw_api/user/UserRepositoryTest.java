@@ -1,7 +1,6 @@
 package dev.romulus_lanceues.tanaw_api.user;
 
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -62,7 +61,7 @@ class UserRepositoryTest {
     class PersistenceAndAuditing {
 
         @Test
-        @DisplayName("should persist user and generate audit fields")
+        @DisplayName("should persist user and generate audit fields with default authentication version")
         void shouldPersistUserAndGenerateAuditFields() {
             User user = User.builder()
                     .email("charlie@example.com")
@@ -75,6 +74,40 @@ class UserRepositoryTest {
             assertThat(saved.getId()).isNotNull();
             assertThat(saved.getCreatedAt()).isNotNull();
             assertThat(saved.getUpdatedAt()).isNotNull();
+            assertThat(saved.getAuthenticationVersion()).isEqualTo(0L);
+        }
+
+        @Test
+        @DisplayName("should persist user with custom authentication version")
+        void shouldPersistUserWithCustomAuthenticationVersion() {
+            User user = User.builder()
+                    .email("custom@example.com")
+                    .passwordHash("hash_custom_123")
+                    .status(UserStatus.ACTIVE)
+                    .authenticationVersion(3L)
+                    .build();
+
+            User saved = userRepository.saveAndFlush(user);
+
+            assertThat(saved.getAuthenticationVersion()).isEqualTo(3L);
+        }
+
+        @Test
+        @DisplayName("should update authentication version when incremented")
+        void shouldUpdateAuthenticationVersionWhenIncremented() {
+            User user = User.builder()
+                    .email("increment@example.com")
+                    .passwordHash("hash_increment_123")
+                    .status(UserStatus.ACTIVE)
+                    .build();
+
+            User saved = userRepository.saveAndFlush(user);
+            assertThat(saved.getAuthenticationVersion()).isEqualTo(0L);
+
+            saved.incrementAuthenticationVersion();
+            User updated = userRepository.saveAndFlush(saved);
+
+            assertThat(updated.getAuthenticationVersion()).isEqualTo(1L);
         }
     }
 
@@ -96,6 +129,7 @@ class UserRepositoryTest {
                         assertThat(user.getId()).isEqualTo(activeUser.getId());
                         assertThat(user.getEmail()).isEqualTo(activeUser.getEmail());
                         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+                        assertThat(user.getAuthenticationVersion()).isEqualTo(0L);
                     });
         }
 
@@ -148,6 +182,7 @@ class UserRepositoryTest {
                     .hasValueSatisfying(user -> {
                         assertThat(user.getId()).isEqualTo(activeUser.getId());
                         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+                        assertThat(user.getAuthenticationVersion()).isEqualTo(0L);
                     });
         }
 
@@ -169,4 +204,58 @@ class UserRepositoryTest {
             assertThat(found).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("findAuthState")
+    class FindAuthState {
+
+        @Test
+        @DisplayName("should return active auth state when user is active")
+        void shouldReturnActiveAuthStateWhenUserIsActive() {
+            User user = User.builder()
+                    .email("active-auth@example.com")
+                    .passwordHash("hash_123")
+                    .status(UserStatus.ACTIVE)
+                    .authenticationVersion(5L)
+                    .build();
+            User saved = entityManager.persistAndFlush(user);
+
+            Optional<UserAuthState> found = userRepository.findAuthState(saved.getId());
+
+            assertThat(found).isPresent().hasValueSatisfying(state -> {
+                assertThat(state.active()).isTrue();
+                assertThat(state.isActive()).isTrue();
+                assertThat(state.authenticationVersion()).isEqualTo(5L);
+            });
+        }
+
+        @Test
+        @DisplayName("should return inactive auth state when user is disabled")
+        void shouldReturnInactiveAuthStateWhenUserIsDisabled() {
+            User user = User.builder()
+                    .email("disabled-auth@example.com")
+                    .passwordHash("hash_456")
+                    .status(UserStatus.DISABLED)
+                    .authenticationVersion(2L)
+                    .build();
+            User saved = entityManager.persistAndFlush(user);
+
+            Optional<UserAuthState> found = userRepository.findAuthState(saved.getId());
+
+            assertThat(found).isPresent().hasValueSatisfying(state -> {
+                assertThat(state.active()).isFalse();
+                assertThat(state.isActive()).isFalse();
+                assertThat(state.authenticationVersion()).isEqualTo(2L);
+            });
+        }
+
+        @Test
+        @DisplayName("should return empty when user does not exist")
+        void shouldReturnEmptyWhenUserDoesNotExist() {
+            Optional<UserAuthState> found = userRepository.findAuthState(java.util.UUID.randomUUID());
+
+            assertThat(found).isEmpty();
+        }
+    }
 }
+

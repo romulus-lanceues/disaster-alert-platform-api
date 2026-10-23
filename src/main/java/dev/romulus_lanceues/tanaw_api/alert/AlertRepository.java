@@ -1,6 +1,5 @@
 package dev.romulus_lanceues.tanaw_api.alert;
 
-import dev.romulus_lanceues.tanaw_api.enums.AlertStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -19,6 +19,9 @@ public interface AlertRepository extends JpaRepository<Alert, UUID>, JpaSpecific
     Optional<Alert> findByDisasterEventIdAndAlertRuleId(UUID disasterEventId, UUID alertRuleId);
 
     boolean existsByDisasterEventIdAndAlertRuleId(UUID disasterEventId, UUID alertRuleId);
+
+    @Query("SELECT a.alertRule.id FROM Alert a WHERE a.disasterEvent.id = :disasterEventId")
+    Set<UUID> findAlertRuleIdsByDisasterEventId(@Param("disasterEventId") UUID disasterEventId);
 
     List<Alert> findByDisasterEventId(UUID disasterEventId);
 

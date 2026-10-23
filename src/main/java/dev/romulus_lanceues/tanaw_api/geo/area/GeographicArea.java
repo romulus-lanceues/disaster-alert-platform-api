@@ -1,0 +1,61 @@
+package dev.romulus_lanceues.tanaw_api.geo.area;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.util.UUID;
+
+@Entity
+@Table(
+        name = "geographic_areas",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_geographic_area_psgc_code",
+                        columnNames = "psgc_code"
+                )
+        },
+        indexes = {
+                @Index(
+                        name = "idx_geographic_areas_parent",
+                        columnList = "parent_id, name"
+                )
+        }
+)
+@Getter
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class GeographicArea {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "psgc_code", nullable = false, length = 10)
+    private String psgcCode;
+
+    @Column(nullable = false, length = 150)
+    private String name;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private GeographicAreaType type;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id")
+    private GeographicArea parent;
+
+    @Column(nullable = false)
+    private boolean active;
+
+    public void deactivate() {
+        this.active = false;
+    }
+
+    public void activate() {
+        this.active = true;
+    }
+}

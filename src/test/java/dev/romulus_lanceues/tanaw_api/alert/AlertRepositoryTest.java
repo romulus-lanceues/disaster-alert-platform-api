@@ -1,13 +1,13 @@
 package dev.romulus_lanceues.tanaw_api.alert;
 
+import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRule;
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
-import dev.romulus_lanceues.tanaw_api.enums.AlertStatus;
-import dev.romulus_lanceues.tanaw_api.enums.DisasterType;
-import dev.romulus_lanceues.tanaw_api.enums.GeographicAreaType;
-import dev.romulus_lanceues.tanaw_api.enums.UserStatus;
-import dev.romulus_lanceues.tanaw_api.jts.GeoPointFactory;
-import dev.romulus_lanceues.tanaw_api.location.GeographicArea;
+import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
+import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaType;
+import dev.romulus_lanceues.tanaw_api.user.UserStatus;
+import dev.romulus_lanceues.tanaw_api.location.GeoPointFactory;
+import dev.romulus_lanceues.tanaw_api.geo.area.GeographicArea;
 import dev.romulus_lanceues.tanaw_api.location.Location;
 import dev.romulus_lanceues.tanaw_api.user.User;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +31,7 @@ import org.testcontainers.utility.DockerImageName;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,7 +67,7 @@ class AlertRepositoryTest {
     @BeforeEach
     void setUp() {
         primaryUser = persistUser("user1@example.com");
-        geographicArea = persistGeographicArea("137600000", "City of Manila");
+        geographicArea = persistGeographicArea("1376000000", "City of Manila");
         primaryLocation = persistLocation(primaryUser, "Home", 14.5995, 120.9842);
         primaryRule = persistAlertRule(primaryLocation, DisasterType.EARTHQUAKE, 5.0, 50.0);
         primaryDisasterEvent = persistDisasterEvent("USGS", "usgs-event-001", DisasterType.EARTHQUAKE, 6.2, 14.6000, 120.9850);
@@ -247,6 +248,36 @@ class AlertRepositoryTest {
             List<Alert> alerts = alertRepository.findByDisasterEventId(UUID.randomUUID());
 
             assertThat(alerts).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("findAlertRuleIdsByDisasterEventId")
+    class FindAlertRuleIdsByDisasterEventId {
+
+        @Test
+        @DisplayName("should return set of alert rule IDs associated with specified disaster event")
+        void shouldReturnSetOfAlertRuleIds() {
+            AlertRule secondRule = persistAlertRule(primaryLocation, DisasterType.EARTHQUAKE, 4.0, 30.0);
+            DisasterEvent anotherEvent = persistDisasterEvent("PHIVOLCS", "phi-event-003", DisasterType.EARTHQUAKE, 4.8, 14.1, 121.1);
+
+            persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PENDING);
+            persistAlert(primaryDisasterEvent, secondRule, AlertStatus.PROCESSED);
+            persistAlert(anotherEvent, primaryRule, AlertStatus.PENDING);
+
+            Set<UUID> ruleIds = alertRepository.findAlertRuleIdsByDisasterEventId(primaryDisasterEvent.getId());
+
+            assertThat(ruleIds)
+                    .hasSize(2)
+                    .containsExactlyInAnyOrder(primaryRule.getId(), secondRule.getId());
+        }
+
+        @Test
+        @DisplayName("should return empty set when no alerts exist for disaster event")
+        void shouldReturnEmptySetWhenNoAlertsExistForDisasterEvent() {
+            Set<UUID> ruleIds = alertRepository.findAlertRuleIdsByDisasterEventId(UUID.randomUUID());
+
+            assertThat(ruleIds).isEmpty();
         }
     }
 
@@ -462,7 +493,7 @@ class AlertRepositoryTest {
             assertThat(fetchedEvent.getSource()).isEqualTo("USGS");
             assertThat(fetchedEvent.getExternalId()).isEqualTo("usgs-event-001");
             assertThat(fetchedEvent.getDisasterType()).isEqualTo(DisasterType.EARTHQUAKE);
-            assertThat(fetchedEvent.getMagnitude()).isEqualTo(6.2);
+            assertThat(fetchedEvent.getSeverity()).isEqualTo("HIGH");
 
             // Verify alert rule is fetched
             AlertRule fetchedRule = fetchedAlert.getAlertRule();
@@ -548,11 +579,9 @@ class AlertRepositoryTest {
                 .externalId(externalId)
                 .disasterType(type)
                 .occurredAt(Instant.now())
-                .latitude(lat)
-                .longitude(lon)
-                .location(geoPointFactory.create(lat, lon))
-                .magnitude(magnitude)
-                .depthKm(10.0)
+                .sourceUpdatedAt(Instant.now())
+                .status("reviewed")
+                .place("Manila")
                 .severity("HIGH")
                 .build();
         return entityManager.persistAndFlush(event);
