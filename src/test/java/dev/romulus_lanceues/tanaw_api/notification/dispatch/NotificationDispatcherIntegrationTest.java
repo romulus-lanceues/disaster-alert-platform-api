@@ -197,6 +197,223 @@ class NotificationDispatcherIntegrationTest {
         assertThat(allNotifications).allMatch(n -> n.getStatus() == NotificationStatus.SENT);
     }
 
+    @Test
+    @DisplayName("isolates transient provider failure: notification scheduled for retry while alert remains PROCESSED and subsequent ingestion is unblocked")
+    void isolatesTransientProviderFailureWithoutAffectingAlertOrIngestion() {
+        String rawWebhook = "https://discord.com/api/webhooks/999/retryable-webhook";
+        persistEndpoint(primaryUser, NotificationChannel.DISCORD, rawWebhook, "hint-retry", true, FIXED_NOW.minusSeconds(3600));
+
+        DisasterEvent event1 = persistDisasterEvent("USGS", "usgs-event-" + UUID.randomUUID(), FIXED_NOW.minus(10, ChronoUnit.MINUTES));
+        persistEarthquake(event1, 14.6000, 120.9850, 6.0, 10.0);
+        Alert alert1 = persistAlert(event1, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(5, ChronoUnit.MINUTES));
+
+        // Provider returns retryable 429
+        given(discordSender.send(any(), eq(rawWebhook)))
+                .willReturn(new DeliveryResult.Retryable("HTTP 429 RATE_LIMITED", Duration.ofSeconds(30)));
+
+        DispatchTickResult tickResult1 = dispatcher.dispatchTick();
+
+        assertThat(tickResult1.fanoutResult().notificationsCreated()).isEqualTo(1);
+        assertThat(tickResult1.notificationsDispatched()).isEqualTo(1);
+
+        entityManager.clear();
+
+        // 1. Verify alert remains in PROCESSED status
+        Alert reloadedAlert1 = entityManager.find(Alert.class, alert1.getId());
+        assertThat(reloadedAlert1.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+
+        // 2. Verify notification is in PENDING with retry delay
+        List<Notification> notifications1 = notificationRepository.findAll();
+        assertThat(notifications1).hasSize(1);
+        Notification notif1 = notifications1.get(0);
+        assertThat(notif1.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        assertThat(notif1.getAttemptCount()).isEqualTo(1);
+        assertThat(notif1.getFailureReason()).isEqualTo("HTTP 429 RATE_LIMITED");
+        assertThat(notif1.getNextAttemptAt()).isEqualTo(FIXED_NOW.plusSeconds(30));
+        assertThat(notif1.getLockedUntil()).isNull();
+
+        // 3. Verify ingestion and subsequent dispatcher ticks are completely unblocked
+        DisasterEvent event2 = persistDisasterEvent("USGS", "usgs-event-" + UUID.randomUUID(), FIXED_NOW.minus(2, ChronoUnit.MINUTES));
+        persistEarthquake(event2, 14.6000, 120.9850, 5.8, 12.0);
+        Alert alert2 = persistAlert(event2, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(1, ChronoUnit.MINUTES));
+
+        // Now provider succeeds for new alerts
+        given(discordSender.send(any(), eq(rawWebhook)))
+                .willReturn(new DeliveryResult.Sent("discord-msg-event2"));
+
+        DispatchTickResult tickResult2 = dispatcher.dispatchTick();
+
+        assertThat(tickResult2.fanoutResult().notificationsCreated()).isEqualTo(1);
+        // Note: notif1 is scheduled for +30s in the future so only notif2 is claimed and dispatched
+        assertThat(tickResult2.notificationsDispatched()).isEqualTo(1);
+
+        entityManager.clear();
+        Alert reloadedAlert2 = entityManager.find(Alert.class, alert2.getId());
+        assertThat(reloadedAlert2.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+
+        Alert recheckedAlert1 = entityManager.find(Alert.class, alert1.getId());
+        assertThat(recheckedAlert1.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+    }
+
+    @Test
+    @DisplayName("isolates permanent provider failure: marks notification FAILED, disables endpoint, cancels pending, and preserves alert PROCESSED")
+    void isolatesPermanentProviderFailureAndInvalidatesEndpointWithoutAffectingAlert() {
+        String rawWebhook = "https://discord.com/api/webhooks/999/deleted-webhook";
+        NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, rawWebhook, "hint-deleted", true, FIXED_NOW.minusSeconds(3600));
+
+        // Older alert with another pending notification scheduled for future retry on this endpoint
+        DisasterEvent olderEvent = persistDisasterEvent("USGS", "usgs-event-" + UUID.randomUUID(), FIXED_NOW.minus(30, ChronoUnit.MINUTES));
+        persistEarthquake(olderEvent, 14.6000, 120.9850, 5.0, 10.0);
+        Alert olderAlert = persistAlert(olderEvent, primaryRule, AlertStatus.PROCESSED, FIXED_NOW.minus(20, ChronoUnit.MINUTES));
+        Notification olderPendingNotif = persistNotification(
+                olderAlert, endpoint, NotificationChannel.DISCORD, "hint-deleted", FIXED_NOW.plus(10, ChronoUnit.MINUTES)
+        );
+
+        // Fresh alert
+        DisasterEvent event = persistDisasterEvent("USGS", "usgs-event-" + UUID.randomUUID(), FIXED_NOW.minus(10, ChronoUnit.MINUTES));
+        persistEarthquake(event, 14.6000, 120.9850, 6.5, 8.0);
+        Alert alert = persistAlert(event, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(5, ChronoUnit.MINUTES));
+
+        // Provider returns permanent failure with endpoint invalidation
+        given(discordSender.send(any(), eq(rawWebhook)))
+                .willReturn(new DeliveryResult.Permanent("HTTP 404 WEBHOOK_NOT_FOUND", true));
+
+        DispatchTickResult tickResult = dispatcher.dispatchTick();
+
+        assertThat(tickResult.fanoutResult().notificationsCreated()).isEqualTo(1);
+
+        entityManager.clear();
+
+        // 1. Parent alerts remain PROCESSED
+        Alert reloadedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(reloadedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        Alert reloadedOlderAlert = entityManager.find(Alert.class, olderAlert.getId());
+        assertThat(reloadedOlderAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+
+        // 2. Notification receiving the 404 is FAILED
+        List<Notification> allNotifications = notificationRepository.findAll();
+        assertThat(allNotifications).hasSize(2);
+
+        Notification failedNotif = allNotifications.stream()
+                .filter(n -> n.getAlert().getId().equals(alert.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(failedNotif.getStatus()).isEqualTo(NotificationStatus.FAILED);
+        assertThat(failedNotif.getFailureReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+        assertThat(failedNotif.getLockedUntil()).isNull();
+
+        // 3. Endpoint is disabled with reason
+        NotificationEndpoint reloadedEndpoint = entityManager.find(NotificationEndpoint.class, endpoint.getId());
+        assertThat(reloadedEndpoint.isEnabled()).isFalse();
+        assertThat(reloadedEndpoint.getDisabledReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+
+        // 4. Other pending notification for that endpoint was cancelled
+        Notification cancelledNotif = allNotifications.stream()
+                .filter(n -> n.getId().equals(olderPendingNotif.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(cancelledNotif.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+        assertThat(cancelledNotif.getFailureReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("isolates partial provider failure across multiple endpoints: healthy endpoint succeeds while failing endpoint fails, alert remains PROCESSED")
+    void isolatesPartialProviderFailureAcrossMultipleEndpointsForSameAlert() {
+        String webhookSuccess = "https://discord.com/api/webhooks/111/healthy";
+        String webhookFailure = "https://discord.com/api/webhooks/222/broken";
+
+        User secondaryUser = persistUser("dispatcher-user-2-" + UUID.randomUUID() + "@example.com", UserStatus.ACTIVE);
+        Location secondaryLoc = persistLocation(secondaryUser, "Work", 14.5995, 120.9842);
+        AlertRule secondaryRule = persistAlertRule(secondaryLoc, DisasterType.EARTHQUAKE, 5.0, 50.0);
+
+        NotificationEndpoint healthyEndpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, webhookSuccess, "hint-healthy", true, FIXED_NOW.minusSeconds(3600));
+        NotificationEndpoint brokenEndpoint = persistEndpoint(secondaryUser, NotificationChannel.DISCORD, webhookFailure, "hint-broken", true, FIXED_NOW.minusSeconds(3600));
+
+        DisasterEvent event = persistDisasterEvent("USGS", "usgs-event-" + UUID.randomUUID(), FIXED_NOW.minus(10, ChronoUnit.MINUTES));
+        persistEarthquake(event, 14.6000, 120.9850, 6.1, 15.0);
+        Alert alert1 = persistAlert(event, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(5, ChronoUnit.MINUTES));
+        Alert alert2 = persistAlert(event, secondaryRule, AlertStatus.PENDING, FIXED_NOW.minus(5, ChronoUnit.MINUTES));
+
+        // Mock senders differently per webhook
+        given(discordSender.send(any(), eq(webhookSuccess))).willReturn(new DeliveryResult.Sent("msg-healthy-ok"));
+        given(discordSender.send(any(), eq(webhookFailure))).willReturn(new DeliveryResult.Permanent("HTTP 404 WEBHOOK_NOT_FOUND", true));
+
+        DispatchTickResult tickResult = dispatcher.dispatchTick();
+
+        assertThat(tickResult.fanoutResult().notificationsCreated()).isEqualTo(2);
+        assertThat(tickResult.notificationsDispatched()).isEqualTo(2);
+
+        entityManager.clear();
+
+        // 1. Both alerts are safely PROCESSED
+        Alert reloadedAlert1 = entityManager.find(Alert.class, alert1.getId());
+        assertThat(reloadedAlert1.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        Alert reloadedAlert2 = entityManager.find(Alert.class, alert2.getId());
+        assertThat(reloadedAlert2.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+
+        // 2. Healthy endpoint delivered and remains enabled
+        NotificationEndpoint reloadedHealthy = entityManager.find(NotificationEndpoint.class, healthyEndpoint.getId());
+        assertThat(reloadedHealthy.isEnabled()).isTrue();
+
+        // 3. Broken endpoint disabled
+        NotificationEndpoint reloadedBroken = entityManager.find(NotificationEndpoint.class, brokenEndpoint.getId());
+        assertThat(reloadedBroken.isEnabled()).isFalse();
+        assertThat(reloadedBroken.getDisabledReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+
+        // 4. Notifications reflect individual delivery outcomes
+        List<Notification> notifications = notificationRepository.findAll();
+        assertThat(notifications).hasSize(2);
+
+        Notification healthyNotification = notifications.stream()
+                .filter(n -> n.getEndpoint().getId().equals(healthyEndpoint.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(healthyNotification.getStatus()).isEqualTo(NotificationStatus.SENT);
+        assertThat(healthyNotification.getProviderMessageId()).isEqualTo("msg-healthy-ok");
+
+        Notification brokenNotification = notifications.stream()
+                .filter(n -> n.getEndpoint().getId().equals(brokenEndpoint.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(brokenNotification.getStatus()).isEqualTo(NotificationStatus.FAILED);
+        assertThat(brokenNotification.getFailureReason()).isEqualTo("HTTP 404 WEBHOOK_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("isolates unexpected sender runtime exception: catches error, sanitizes reason, and preserves alert PROCESSED")
+    void isolatesUnexpectedSenderExceptionGracefullyWithoutAffectingAlert() {
+        String rawWebhook = "https://discord.com/api/webhooks/999/crashing-webhook";
+        persistEndpoint(primaryUser, NotificationChannel.DISCORD, rawWebhook, "hint-crash", true, FIXED_NOW.minusSeconds(3600));
+
+        DisasterEvent event = persistDisasterEvent("USGS", "usgs-event-" + UUID.randomUUID(), FIXED_NOW.minus(10, ChronoUnit.MINUTES));
+        persistEarthquake(event, 14.6000, 120.9850, 5.9, 10.0);
+        Alert alert = persistAlert(event, primaryRule, AlertStatus.PENDING, FIXED_NOW.minus(5, ChronoUnit.MINUTES));
+
+        // Sender throws uncaught RuntimeException
+        given(discordSender.send(any(), eq(rawWebhook))).willThrow(new RuntimeException("Simulated socket connection crash"));
+
+        // Dispatch tick must complete cleanly without throwing
+        DispatchTickResult tickResult = dispatcher.dispatchTick();
+
+        assertThat(tickResult.fanoutResult().notificationsCreated()).isEqualTo(1);
+        assertThat(tickResult.notificationsDispatched()).isEqualTo(1);
+
+        entityManager.clear();
+
+        // 1. Alert remains PROCESSED
+        Alert reloadedAlert = entityManager.find(Alert.class, alert.getId());
+        assertThat(reloadedAlert.getStatus()).isEqualTo(AlertStatus.PROCESSED);
+
+        // 2. Notification is sanitized and scheduled for retry
+        List<Notification> notifications = notificationRepository.findAll();
+        assertThat(notifications).hasSize(1);
+        Notification notif = notifications.get(0);
+        assertThat(notif.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        assertThat(notif.getAttemptCount()).isEqualTo(1);
+        assertThat(notif.getFailureReason()).isEqualTo("UNEXPECTED_ERROR: RuntimeException");
+        assertThat(notif.getFailureReason()).doesNotContain("crashing-webhook");
+    }
+
     // Helper persistence methods
 
     private User persistUser(String email, UserStatus status) {
@@ -293,6 +510,10 @@ class NotificationDispatcherIntegrationTest {
     }
 
     private Notification persistNotification(Alert alert, NotificationEndpoint endpoint, NotificationChannel channel, String destinationHint) {
+        return persistNotification(alert, endpoint, channel, destinationHint, FIXED_NOW);
+    }
+
+    private Notification persistNotification(Alert alert, NotificationEndpoint endpoint, NotificationChannel channel, String destinationHint, Instant nextAttemptAt) {
         Notification notification = Notification.builder()
                 .alert(alert)
                 .endpoint(endpoint)
@@ -300,7 +521,7 @@ class NotificationDispatcherIntegrationTest {
                 .destination(destinationHint)
                 .status(NotificationStatus.PENDING)
                 .attemptCount(0)
-                .nextAttemptAt(FIXED_NOW)
+                .nextAttemptAt(nextAttemptAt)
                 .build();
         return entityManager.persistAndFlush(notification);
     }
