@@ -9,8 +9,12 @@ import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventAlreadyExistsExcepti
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEventNotFoundException;
 import dev.romulus_lanceues.tanaw_api.geo.area.GeographicAreaNotFoundException;
 import dev.romulus_lanceues.tanaw_api.location.LocationNotFoundException;
-import dev.romulus_lanceues.tanaw_api.notification.NotificationAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.notification.NotificationNotFoundException;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpointNotFoundException;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.RateLimitExceededException;
+import dev.romulus_lanceues.tanaw_api.notification.channel.EndpointVerificationException;
+import dev.romulus_lanceues.tanaw_api.notification.channel.InvalidDestinationException;
+import dev.romulus_lanceues.tanaw_api.notification.channel.UnsupportedNotificationChannelException;
 import dev.romulus_lanceues.tanaw_api.user.InvalidPasswordException;
 import dev.romulus_lanceues.tanaw_api.user.UserAlreadyExistsException;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;
@@ -176,18 +180,83 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem;
     }
 
-    @ExceptionHandler(NotificationAlreadyExistsException.class)
-    public ProblemDetail handleException(NotificationAlreadyExistsException ex) {
+
+    @ExceptionHandler(NotificationEndpointNotFoundException.class)
+    public ProblemDetail handleException(NotificationEndpointNotFoundException ex) {
         log.error(ex.getMessage(), ex);
 
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.CONFLICT,
+                HttpStatus.NOT_FOUND,
                 ex.getMessage()
         );
 
-        problem.setTitle("Notification Already Exists");
+        problem.setTitle("Notification Endpoint Not Found");
 
         return problem;
+    }
+
+    @ExceptionHandler(UnsupportedNotificationChannelException.class)
+    public ProblemDetail handleException(UnsupportedNotificationChannelException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Unsupported Notification Channel");
+
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidDestinationException.class)
+    public ProblemDetail handleException(InvalidDestinationException ex) {
+        log.error(ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Invalid Notification Destination");
+
+        return problem;
+    }
+
+    @ExceptionHandler(EndpointVerificationException.class)
+    public ProblemDetail handleException(EndpointVerificationException ex) {
+        log.error("Endpoint verification failed: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_GATEWAY,
+                ex.getMessage()
+        );
+
+        problem.setTitle("Endpoint Verification Failed");
+
+        return problem;
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleException(RateLimitExceededException ex) {
+        log.warn("Rate limit exceeded: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ex.getMessage()
+        );
+        problem.setTitle("Too Many Requests");
+
+        HttpHeaders headers = new HttpHeaders();
+        if (ex.getRetryAfter() != null) {
+            long seconds = Math.max(1, ex.getRetryAfter().toSeconds());
+            headers.set(HttpHeaders.RETRY_AFTER, String.valueOf(seconds));
+            problem.setProperty("retryAfterSeconds", seconds);
+        }
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .headers(headers)
+                .body(problem);
     }
 
     @ExceptionHandler(InvalidPasswordException.class)

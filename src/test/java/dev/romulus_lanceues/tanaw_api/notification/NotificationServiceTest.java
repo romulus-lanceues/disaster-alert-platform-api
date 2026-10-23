@@ -1,13 +1,12 @@
 package dev.romulus_lanceues.tanaw_api.notification;
 
-import dev.romulus_lanceues.tanaw_api.alert.Alert;
 import dev.romulus_lanceues.tanaw_api.alert.AlertStatus;
+import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,10 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("NotificationService Tests")
@@ -58,62 +54,6 @@ class NotificationServiceTest {
                 Instant.now(),
                 "HIGH"
         );
-    }
-
-    private Notification buildNotification(UUID id, Alert alert, NotificationStatus status, int attemptCount) {
-        return Notification.builder()
-                .id(id)
-                .alert(alert)
-                .channel(NotificationChannel.EMAIL)
-                .destination("user@example.com")
-                .status(status)
-                .attemptCount(attemptCount)
-                .createdAt(Instant.now())
-                .build();
-    }
-
-    @Nested
-    @DisplayName("createNotification")
-    class CreateNotification {
-
-        @Test
-        @DisplayName("should save notification when alert and channel combination does not exist")
-        void shouldSaveNotification_whenAlertAndChannelDoNotExist() {
-
-            UUID alertId = UUID.randomUUID();
-            Alert alert = Alert.builder().id(alertId).build();
-            given(notificationRepository.existsByAlertIdAndChannel(alertId, NotificationChannel.EMAIL))
-                    .willReturn(false);
-
-            notificationService.createNotification(alert, NotificationChannel.EMAIL, "user@example.com");
-
-            ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-            then(notificationRepository).should().save(captor.capture());
-            Notification saved = captor.getValue();
-            assertThat(saved.getAlert()).isEqualTo(alert);
-            assertThat(saved.getChannel()).isEqualTo(NotificationChannel.EMAIL);
-            assertThat(saved.getDestination()).isEqualTo("user@example.com");
-            assertThat(saved.getStatus()).isEqualTo(NotificationStatus.PENDING);
-            assertThat(saved.getAttemptCount()).isZero();
-        }
-
-        @Test
-        @DisplayName("should throw NotificationAlreadyExistsException when alert and channel already exist")
-        void shouldThrowNotificationAlreadyExistsException_whenAlertAndChannelAlreadyExist() {
-
-            UUID alertId = UUID.randomUUID();
-            Alert alert = Alert.builder().id(alertId).build();
-            given(notificationRepository.existsByAlertIdAndChannel(alertId, NotificationChannel.EMAIL))
-                    .willReturn(true);
-
-
-            assertThatThrownBy(() -> notificationService.createNotification(alert, NotificationChannel.EMAIL, "user@example.com"))
-                    .isInstanceOf(NotificationAlreadyExistsException.class)
-                    .hasMessageContaining(alertId.toString())
-                    .hasMessageContaining(NotificationChannel.EMAIL.name());
-
-            then(notificationRepository).should(never()).save(any());
-        }
     }
 
     @Nested
@@ -206,175 +146,6 @@ class NotificationServiceTest {
             NotificationResponse item = actualPage.getContent().get(0);
             assertThat(item.id()).isEqualTo(response.id());
             assertThat(item.status()).isEqualTo(NotificationStatus.PENDING);
-        }
-    }
-
-    @Nested
-    @DisplayName("markAsProcessing")
-    class MarkAsProcessing {
-
-        @Test
-        @DisplayName("should increment attempt count, set status to PROCESSING, and return NotificationStatusResponse")
-        void shouldIncrementAttemptAndSetStatusProcessing_whenFound() {
-            UUID notifId = UUID.randomUUID();
-            UUID alertId = UUID.randomUUID();
-            Alert alert = Alert.builder().id(alertId).build();
-            Notification notification = buildNotification(notifId, alert, NotificationStatus.PENDING, 0);
-
-            given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
-            given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
-
-            NotificationStatusResponse result = notificationService.markAsProcessing(notifId);
-
-            assertThat(result).isNotNull();
-            assertThat(result.id()).isEqualTo(notifId);
-            assertThat(result.alertId()).isEqualTo(alertId);
-            assertThat(result.channel()).isEqualTo(NotificationChannel.EMAIL);
-            assertThat(result.destination()).isEqualTo("user@example.com");
-            assertThat(result.status()).isEqualTo(NotificationStatus.PROCESSING);
-            assertThat(result.attemptCount()).isEqualTo(1);
-            assertThat(result.sentAt()).isNull();
-            assertThat(result.failureReason()).isNull();
-            assertThat(result.createdAt()).isNotNull();
-        }
-
-        @Test
-        @DisplayName("should throw NotificationNotFoundException when notification not found")
-        void shouldThrowNotificationNotFoundException_whenNotFound() {
-            UUID notifId = UUID.randomUUID();
-            given(notificationRepository.findById(notifId)).willReturn(Optional.empty());
-
-            assertThatThrownBy(() -> notificationService.markAsProcessing(notifId))
-                    .isInstanceOf(NotificationNotFoundException.class)
-                    .hasMessageContaining(notifId.toString());
-
-            then(notificationRepository).should(never()).save(any());
-        }
-    }
-
-    @Nested
-    @DisplayName("recordSuccess")
-    class RecordSuccess {
-
-        @Test
-        @DisplayName("should set status to SENT, record sentAt timestamp, and return NotificationStatusResponse")
-        void shouldSetStatusSentAndPopulateSentAt_whenFound() {
-            UUID notifId = UUID.randomUUID();
-            UUID alertId = UUID.randomUUID();
-            Alert alert = Alert.builder().id(alertId).build();
-            Notification notification = buildNotification(notifId, alert, NotificationStatus.PROCESSING, 1);
-
-            given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
-            given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
-
-            NotificationStatusResponse result = notificationService.recordSuccess(notifId);
-
-            assertThat(result).isNotNull();
-            assertThat(result.id()).isEqualTo(notifId);
-            assertThat(result.alertId()).isEqualTo(alertId);
-            assertThat(result.channel()).isEqualTo(NotificationChannel.EMAIL);
-            assertThat(result.destination()).isEqualTo("user@example.com");
-            assertThat(result.status()).isEqualTo(NotificationStatus.SENT);
-            assertThat(result.attemptCount()).isEqualTo(1);
-            assertThat(result.sentAt()).isNotNull();
-            assertThat(result.failureReason()).isNull();
-            assertThat(result.createdAt()).isNotNull();
-        }
-
-        @Test
-        @DisplayName("should throw NotificationNotFoundException when notification not found")
-        void shouldThrowNotificationNotFoundException_whenNotFound() {
-            UUID notifId = UUID.randomUUID();
-            given(notificationRepository.findById(notifId)).willReturn(Optional.empty());
-
-            assertThatThrownBy(() -> notificationService.recordSuccess(notifId))
-                    .isInstanceOf(NotificationNotFoundException.class)
-                    .hasMessageContaining(notifId.toString());
-
-            then(notificationRepository).should(never()).save(any());
-        }
-    }
-
-    @Nested
-    @DisplayName("recordFailure")
-    class RecordFailure {
-
-        @Test
-        @DisplayName("should set status to FAILED, record failureReason, and return NotificationStatusResponse")
-        void shouldSetStatusFailedAndPopulateFailureReason_whenFound() {
-            UUID notifId = UUID.randomUUID();
-            UUID alertId = UUID.randomUUID();
-            Alert alert = Alert.builder().id(alertId).build();
-            Notification notification = buildNotification(notifId, alert, NotificationStatus.PROCESSING, 1);
-
-            given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
-            given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
-
-            NotificationStatusResponse result = notificationService.recordFailure(notifId, "Connection timeout");
-
-            assertThat(result).isNotNull();
-            assertThat(result.id()).isEqualTo(notifId);
-            assertThat(result.alertId()).isEqualTo(alertId);
-            assertThat(result.channel()).isEqualTo(NotificationChannel.EMAIL);
-            assertThat(result.destination()).isEqualTo("user@example.com");
-            assertThat(result.status()).isEqualTo(NotificationStatus.FAILED);
-            assertThat(result.attemptCount()).isEqualTo(1);
-            assertThat(result.failureReason()).isEqualTo("Connection timeout");
-            assertThat(result.createdAt()).isNotNull();
-        }
-
-        @Test
-        @DisplayName("should throw NotificationNotFoundException when notification not found")
-        void shouldThrowNotificationNotFoundException_whenNotFound() {
-            UUID notifId = UUID.randomUUID();
-            given(notificationRepository.findById(notifId)).willReturn(Optional.empty());
-
-            assertThatThrownBy(() -> notificationService.recordFailure(notifId, "Connection timeout"))
-                    .isInstanceOf(NotificationNotFoundException.class)
-                    .hasMessageContaining(notifId.toString());
-
-            then(notificationRepository).should(never()).save(any());
-        }
-    }
-
-    @Nested
-    @DisplayName("markAsCancelled")
-    class MarkAsCancelled {
-
-        @Test
-        @DisplayName("should set status to CANCELLED and return NotificationStatusResponse")
-        void shouldSetStatusCancelled_whenFound() {
-            UUID notifId = UUID.randomUUID();
-            UUID alertId = UUID.randomUUID();
-            Alert alert = Alert.builder().id(alertId).build();
-            Notification notification = buildNotification(notifId, alert, NotificationStatus.PENDING, 0);
-
-            given(notificationRepository.findById(notifId)).willReturn(Optional.of(notification));
-            given(notificationRepository.save(any(Notification.class))).willAnswer(inv -> inv.getArgument(0));
-
-            NotificationStatusResponse result = notificationService.markAsCancelled(notifId);
-
-            assertThat(result).isNotNull();
-            assertThat(result.id()).isEqualTo(notifId);
-            assertThat(result.alertId()).isEqualTo(alertId);
-            assertThat(result.channel()).isEqualTo(NotificationChannel.EMAIL);
-            assertThat(result.destination()).isEqualTo("user@example.com");
-            assertThat(result.status()).isEqualTo(NotificationStatus.CANCELLED);
-            assertThat(result.attemptCount()).isZero();
-            assertThat(result.createdAt()).isNotNull();
-        }
-
-        @Test
-        @DisplayName("should throw NotificationNotFoundException when notification not found")
-        void shouldThrowNotificationNotFoundException_whenNotFound() {
-            UUID notifId = UUID.randomUUID();
-            given(notificationRepository.findById(notifId)).willReturn(Optional.empty());
-
-            assertThatThrownBy(() -> notificationService.markAsCancelled(notifId))
-                    .isInstanceOf(NotificationNotFoundException.class)
-                    .hasMessageContaining(notifId.toString());
-
-            then(notificationRepository).should(never()).save(any());
         }
     }
 }

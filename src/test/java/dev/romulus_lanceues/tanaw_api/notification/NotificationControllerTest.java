@@ -1,6 +1,7 @@
 package dev.romulus_lanceues.tanaw_api.notification;
 
 import dev.romulus_lanceues.tanaw_api.alert.AlertStatus;
+import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.auth.JwtProperties;
 import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAccessDeniedHandler;
 import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAuthenticationEntryPoint;

@@ -2,6 +2,7 @@ package dev.romulus_lanceues.tanaw_api.notification;
 
 import dev.romulus_lanceues.tanaw_api.alert.AlertStatus;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
+import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;

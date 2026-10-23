@@ -4,6 +4,8 @@ import dev.romulus_lanceues.tanaw_api.alert.Alert;
 import dev.romulus_lanceues.tanaw_api.alert.rule.AlertRule;
 import dev.romulus_lanceues.tanaw_api.alert.AlertStatus;
 import dev.romulus_lanceues.tanaw_api.config.JpaAuditingTestConfig;
+import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpoint;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterEvent;
 import dev.romulus_lanceues.tanaw_api.disaster.DisasterType;
 import dev.romulus_lanceues.tanaw_api.location.GeoPointFactory;
@@ -106,6 +108,32 @@ public class NotificationRepositoryTest {
                 assertThat(persistedNotif.getAttemptCount()).isEqualTo(0);
                 assertThat(persistedNotif.getCreatedAt()).isNotNull();
             });
+        }
+
+        @Test
+        @DisplayName("should persist notification with endpoint association and fetch it lazily")
+        void shouldPersistNotificationWithEndpointAssociation() {
+            NotificationEndpoint endpoint = persistNotificationEndpoint(primaryUser, NotificationChannel.DISCORD, "https://discord.com/api/webhooks/1/token");
+
+            Notification notification = Notification.builder()
+                    .alert(primaryAlert)
+                    .endpoint(endpoint)
+                    .channel(NotificationChannel.DISCORD)
+                    .destination(endpoint.getDestinationHint())
+                    .status(NotificationStatus.PENDING)
+                    .attemptCount(0)
+                    .build();
+
+            Notification persisted = notificationRepository.saveAndFlush(notification);
+            entityManager.clear();
+
+            Optional<Notification> found = notificationRepository.findById(persisted.getId());
+            assertThat(found).isPresent();
+            Notification retrieved = found.get();
+            assertThat(retrieved.getEndpoint()).isNotNull();
+            assertThat(retrieved.getEndpoint().getId()).isEqualTo(endpoint.getId());
+            assertThat(retrieved.getEndpoint().getChannel()).isEqualTo(NotificationChannel.DISCORD);
+            assertThat(retrieved.getEndpoint().getDestination()).isEqualTo("https://discord.com/api/webhooks/1/token");
         }
 
         @Test
@@ -493,7 +521,114 @@ public class NotificationRepositoryTest {
         }
     }
 
+    @Nested
+    @DisplayName("Bulk Cancellation")
+    class BulkCancellation {
 
+        @Test
+        @DisplayName("should cancel all pending notifications for specified endpoint and leave other statuses unchanged")
+        void shouldCancelPendingNotificationsForEndpoint() {
+            NotificationEndpoint targetEndpoint = persistNotificationEndpoint(primaryUser, NotificationChannel.DISCORD, "https://discord.com/api/webhooks/1/token");
+            NotificationEndpoint otherEndpoint = persistNotificationEndpoint(primaryUser, NotificationChannel.EMAIL, "user@example.com");
+
+            Alert alert1 = persistAlert(persistDisasterEvent("USGS", "usgs-event-b1", DisasterType.EARTHQUAKE, 6.0, 14.6, 120.9), primaryRule, AlertStatus.PENDING);
+            Alert alert2 = persistAlert(persistDisasterEvent("USGS", "usgs-event-b2", DisasterType.EARTHQUAKE, 6.0, 14.6, 120.9), primaryRule, AlertStatus.PENDING);
+            Alert alert3 = persistAlert(persistDisasterEvent("USGS", "usgs-event-b3", DisasterType.EARTHQUAKE, 6.0, 14.6, 120.9), primaryRule, AlertStatus.PENDING);
+            Alert alert4 = persistAlert(persistDisasterEvent("USGS", "usgs-event-b4", DisasterType.EARTHQUAKE, 6.0, 14.6, 120.9), primaryRule, AlertStatus.PENDING);
+            Alert alert5 = persistAlert(persistDisasterEvent("USGS", "usgs-event-b5", DisasterType.EARTHQUAKE, 6.0, 14.6, 120.9), primaryRule, AlertStatus.PENDING);
+            Alert alert6 = persistAlert(persistDisasterEvent("USGS", "usgs-event-b6", DisasterType.EARTHQUAKE, 6.0, 14.6, 120.9), primaryRule, AlertStatus.PENDING);
+
+            Notification targetPending1 = notificationRepository.saveAndFlush(Notification.builder()
+                    .alert(alert1).endpoint(targetEndpoint).channel(NotificationChannel.DISCORD)
+                    .destination("hint").status(NotificationStatus.PENDING).attemptCount(0).build());
+
+            Notification targetPending2 = notificationRepository.saveAndFlush(Notification.builder()
+                    .alert(alert2).endpoint(targetEndpoint).channel(NotificationChannel.DISCORD)
+                    .destination("hint").status(NotificationStatus.PENDING).attemptCount(1).build());
+
+            Notification targetProcessing = notificationRepository.saveAndFlush(Notification.builder()
+                    .alert(alert3).endpoint(targetEndpoint).channel(NotificationChannel.DISCORD)
+                    .destination("hint").status(NotificationStatus.PROCESSING).attemptCount(1).build());
+
+            Notification targetSent = notificationRepository.saveAndFlush(Notification.builder()
+                    .alert(alert4).endpoint(targetEndpoint).channel(NotificationChannel.DISCORD)
+                    .destination("hint").status(NotificationStatus.SENT).attemptCount(1).build());
+
+            Notification otherPending = notificationRepository.saveAndFlush(Notification.builder()
+                    .alert(alert5).endpoint(otherEndpoint).channel(NotificationChannel.EMAIL)
+                    .destination("email").status(NotificationStatus.PENDING).attemptCount(0).build());
+
+            Notification nullEndpointPending = notificationRepository.saveAndFlush(Notification.builder()
+                    .alert(alert6).channel(NotificationChannel.EMAIL)
+                    .destination("legacy").status(NotificationStatus.PENDING).attemptCount(0).build());
+
+            entityManager.clear();
+
+            int cancelledCount = notificationRepository.cancelPendingByEndpointId(targetEndpoint.getId(), "Webhook deleted");
+
+            assertThat(cancelledCount).isEqualTo(2);
+
+            entityManager.clear();
+
+            Notification updated1 = notificationRepository.findById(targetPending1.getId()).orElseThrow();
+            assertThat(updated1.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(updated1.getFailureReason()).isEqualTo("Webhook deleted");
+
+            Notification updated2 = notificationRepository.findById(targetPending2.getId()).orElseThrow();
+            assertThat(updated2.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(updated2.getFailureReason()).isEqualTo("Webhook deleted");
+
+            Notification keptProcessing = notificationRepository.findById(targetProcessing.getId()).orElseThrow();
+            assertThat(keptProcessing.getStatus()).isEqualTo(NotificationStatus.PROCESSING);
+
+            Notification keptSent = notificationRepository.findById(targetSent.getId()).orElseThrow();
+            assertThat(keptSent.getStatus()).isEqualTo(NotificationStatus.SENT);
+
+            Notification keptOther = notificationRepository.findById(otherPending.getId()).orElseThrow();
+            assertThat(keptOther.getStatus()).isEqualTo(NotificationStatus.PENDING);
+
+            Notification keptNull = notificationRepository.findById(nullEndpointPending.getId()).orElseThrow();
+            assertThat(keptNull.getStatus()).isEqualTo(NotificationStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("should use default cancellation reason when not specified")
+        void shouldUseDefaultCancellationReason() {
+            NotificationEndpoint endpoint = persistNotificationEndpoint(primaryUser, NotificationChannel.DISCORD, "https://discord.com/api/webhooks/2/token");
+            Alert alertForDefault = persistAlert(persistDisasterEvent("USGS", "usgs-event-default", DisasterType.EARTHQUAKE, 6.0, 14.6, 120.9), primaryRule, AlertStatus.PENDING);
+
+            Notification pending = notificationRepository.saveAndFlush(Notification.builder()
+                    .alert(alertForDefault).endpoint(endpoint).channel(NotificationChannel.DISCORD)
+                    .destination("hint").status(NotificationStatus.PENDING).attemptCount(0).build());
+
+            entityManager.clear();
+
+            int count = notificationRepository.cancelPendingByEndpointId(endpoint.getId());
+
+            assertThat(count).isEqualTo(1);
+
+            Notification updated = notificationRepository.findById(pending.getId()).orElseThrow();
+            assertThat(updated.getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+            assertThat(updated.getFailureReason()).isEqualTo("Endpoint disabled or deleted");
+        }
+
+        @Test
+        @DisplayName("returns zero when no pending notifications match endpoint")
+        void returnsZeroWhenNoPendingNotificationsMatch() {
+            int count = notificationRepository.cancelPendingByEndpointId(UUID.randomUUID());
+            assertThat(count).isZero();
+        }
+    }
+
+    private NotificationEndpoint persistNotificationEndpoint(User user, NotificationChannel channel, String destination) {
+        NotificationEndpoint endpoint = NotificationEndpoint.builder()
+                .user(user)
+                .channel(channel)
+                .destination(destination)
+                .destinationHint(destination)
+                .build();
+        return entityManager.persistAndFlush(endpoint);
+    }
 
     private User persistUser(String email) {
         User user = User.builder()
