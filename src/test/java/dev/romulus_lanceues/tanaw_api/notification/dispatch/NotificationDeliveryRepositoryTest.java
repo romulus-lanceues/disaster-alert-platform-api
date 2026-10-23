@@ -858,6 +858,94 @@ class NotificationDeliveryRepositoryTest {
             assertThat(reloaded.getProviderMessageId()).isNull();
             assertThat(reloaded.getFailureReason()).isEqualTo("Lease expired; returned to queue");
         }
+
+        @Test
+        @DisplayName("recordRetryableFailure rejects stale worker when lease was expired and reaped")
+        void recordRetryableFailureRejectsStaleWorkerAfterReap() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now.minus(10, ChronoUnit.MINUTES), now.minus(1, ChronoUnit.MINUTES)
+            );
+
+            int reaped = deliveryRepository.reapExpiredLeases(now, 3);
+            assertThat(reaped).isEqualTo(1);
+
+            boolean updated = deliveryRepository.recordRetryableFailure(n.getId(), 1, "HTTP 500", now.plusSeconds(30), 3, now);
+            assertThat(updated).isFalse();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloaded.getFailureReason()).isEqualTo("Lease expired; returned to queue");
+        }
+
+        @Test
+        @DisplayName("recordPermanentFailure rejects stale worker when lease was expired and reaped")
+        void recordPermanentFailureRejectsStaleWorkerAfterReap() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+
+            Notification n = persistNotification(
+                    alert, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now.minus(10, ChronoUnit.MINUTES), now.minus(1, ChronoUnit.MINUTES)
+            );
+
+            int reaped = deliveryRepository.reapExpiredLeases(now, 3);
+            assertThat(reaped).isEqualTo(1);
+
+            boolean updated = deliveryRepository.recordPermanentFailure(n.getId(), 1, "HTTP 404 WEBHOOK_NOT_FOUND", now);
+            assertThat(updated).isFalse();
+
+            entityManager.clear();
+            Notification reloaded = entityManager.find(Notification.class, n.getId());
+            assertThat(reloaded.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloaded.getFailureReason()).isEqualTo("Lease expired; returned to queue");
+        }
+
+        @Test
+        @DisplayName("recordPermanentFailureAndInvalidateEndpoint rejects stale worker when lease was expired and reaped")
+        void recordPermanentFailureAndInvalidateEndpointRejectsStaleWorkerAfterReap() {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            Alert alert1 = persistAlert(primaryDisasterEvent, primaryRule, AlertStatus.PROCESSED, now);
+            DisasterEvent event2 = persistDisasterEvent("USGS", "event-" + UUID.randomUUID(), now);
+            Alert alert2 = persistAlert(event2, primaryRule, AlertStatus.PROCESSED, now.plus(1, ChronoUnit.SECONDS));
+
+            NotificationEndpoint endpoint = persistEndpoint(primaryUser, NotificationChannel.DISCORD, "hint-1", true, now);
+            Notification nExpired = persistNotification(
+                    alert1, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PROCESSING, 1, now.minus(10, ChronoUnit.MINUTES), now.minus(1, ChronoUnit.MINUTES)
+            );
+            Notification nPending = persistNotification(
+                    alert2, endpoint, NotificationChannel.DISCORD, "hint-1",
+                    NotificationStatus.PENDING, 0, now, null
+            );
+
+            int reaped = deliveryRepository.reapExpiredLeases(now, 3);
+            assertThat(reaped).isEqualTo(1);
+
+            boolean updated = deliveryRepository.recordPermanentFailureAndInvalidateEndpoint(
+                    nExpired.getId(), 1, endpoint.getId(), "HTTP 404 WEBHOOK_NOT_FOUND", now
+            );
+            assertThat(updated).isFalse();
+
+            entityManager.clear();
+            Notification reloadedExpired = entityManager.find(Notification.class, nExpired.getId());
+            assertThat(reloadedExpired.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloadedExpired.getFailureReason()).isEqualTo("Lease expired; returned to queue");
+
+            NotificationEndpoint reloadedEndpoint = entityManager.find(NotificationEndpoint.class, endpoint.getId());
+            assertThat(reloadedEndpoint.isEnabled()).isTrue();
+            assertThat(reloadedEndpoint.getDisabledReason()).isNull();
+
+            Notification reloadedPending = entityManager.find(Notification.class, nPending.getId());
+            assertThat(reloadedPending.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(reloadedPending.getFailureReason()).isNull();
+        }
     }
 
     @Nested
