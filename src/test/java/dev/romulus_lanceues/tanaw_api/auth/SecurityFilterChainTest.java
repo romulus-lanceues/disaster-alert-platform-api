@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -342,6 +343,46 @@ class SecurityFilterChainTest {
                     .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
                     .andExpect(jsonPath("$.status", is(401)))
                     .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+    }
+
+    @Nested
+    @DisplayName("CORS enforcement")
+    class CorsEnforcement {
+
+        @Test
+        @DisplayName("OPTIONS preflight to /api/v1/users/me with allowed origin succeeds with 200 and CORS headers")
+        void preflight_allowedOrigin_succeeds() throws Exception {
+            mockMvc.perform(options("/api/v1/users/me")
+                            .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Authorization"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"))
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET,POST,PUT,PATCH,DELETE,OPTIONS"));
+        }
+
+        @Test
+        @DisplayName("OPTIONS preflight to /api/v1/auth/login with allowed origin succeeds with 200 and CORS headers")
+        void preflight_authEndpoint_allowedOrigin_succeeds() throws Exception {
+            mockMvc.perform(options("/api/v1/auth/login")
+                            .header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Content-Type,X-XSRF-TOKEN"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:5173"))
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+        }
+
+        @Test
+        @DisplayName("OPTIONS preflight with disallowed origin does not return Access-Control-Allow-Origin")
+        void preflight_disallowedOrigin_rejected() throws Exception {
+            mockMvc.perform(options("/api/v1/users/me")
+                            .header(HttpHeaders.ORIGIN, "http://evil-attacker.com")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+                    .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN))
+                    .andExpect(status().isForbidden());
         }
     }
 }
