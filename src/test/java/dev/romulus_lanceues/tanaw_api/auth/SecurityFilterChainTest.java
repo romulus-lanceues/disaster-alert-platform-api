@@ -308,4 +308,40 @@ class SecurityFilterChainTest {
                     .andExpect(jsonPath("$.title", is("Unauthorized")));
         }
     }
+
+    @Nested
+    @DisplayName("Actuator endpoint security")
+    class ActuatorEndpointSecurity {
+
+        @Test
+        @DisplayName("GET /actuator/health is permitted without token and passes security filter chain")
+        void health_isPermittedWithoutToken() throws Exception {
+            mockMvc.perform(get("/actuator/health"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("GET /actuator/health/readiness is permitted without token and passes security filter chain")
+        void healthReadiness_isPermittedWithoutToken() throws Exception {
+            mockMvc.perform(get("/actuator/health/readiness"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("GET /actuator/info is permitted without token and passes security filter chain")
+        void info_isPermittedWithoutToken() throws Exception {
+            mockMvc.perform(get("/actuator/info"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("GET /actuator/env is denied with 401 Unauthorized ProblemDetail")
+        void env_isDeniedWith401ProblemDetail() throws Exception {
+            mockMvc.perform(get("/actuator/env"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+    }
 }
