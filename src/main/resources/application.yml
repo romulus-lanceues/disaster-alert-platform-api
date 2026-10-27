@@ -73,7 +73,7 @@ alert:
     max-batches-per-drain: 10
 
 notification:
-  dry-run: true
+  dry-run: ${NOTIFICATION_DRY_RUN:true}
   dispatcher:
     enabled: true
     interval: PT5S
