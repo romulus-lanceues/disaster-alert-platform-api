@@ -59,19 +59,36 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
+    @Profile("dev")
+    public SecurityFilterChain devSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher("/api/dev/**")
+                .cors(Customizer.withDefaults())
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .formLogin(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(authorize -> authorize
+                        .anyRequest().permitAll());
+
+        return http.build();
+    }
+
+    @Bean
+    @Order(3)
     public SecurityFilterChain authFilterChain(
             HttpSecurity http,
             ProblemDetailsAuthenticationEntryPoint authenticationEntryPoint,
             ProblemDetailsAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
-                .securityMatcher("/api/v1/auth/**", "/api/csrf", "/api/dev/**")
+                .securityMatcher("/api/v1/auth/**", "/api/csrf")
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .csrf(csrf -> csrf
-                        .ignoringRequestMatchers("/api/dev/**")
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
@@ -86,7 +103,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    @Order(3)
+    @Order(4)
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthConverter jwtAuthConverter,
