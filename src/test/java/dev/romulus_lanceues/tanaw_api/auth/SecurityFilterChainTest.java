@@ -37,7 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = {AuthController.class, UserController.class})
+@WebMvcTest(controllers = {AuthController.class, UserController.class, CsrfController.class})
 @Import({
         SecurityConfig.class,
         GlobalExceptionHandler.class,
@@ -307,6 +307,48 @@ class SecurityFilterChainTest {
                     .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
                     .andExpect(jsonPath("$.status", is(401)))
                     .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+    }
+
+    @Nested
+    @DisplayName("Dev endpoint restriction in non-dev profile")
+    class DevEndpointRestriction {
+
+        @Test
+        @DisplayName("POST /api/dev/simulate-earthquake without token is denied with 401 ProblemDetail when non-dev")
+        void simulateEarthquake_unauthenticated_isDeniedWith401() throws Exception {
+            mockMvc.perform(post("/api/dev/simulate-earthquake"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+
+        @Test
+        @DisplayName("GET /api/dev/test without token is denied with 401 ProblemDetail when non-dev")
+        void getDevEndpoint_unauthenticated_isDeniedWith401() throws Exception {
+            mockMvc.perform(get("/api/dev/test"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+
+        @Test
+        @DisplayName("POST /api/dev/simulate-earthquake even with valid JWT is denied with 403 ProblemDetail when non-dev")
+        void simulateEarthquake_authenticated_isDeniedWith403() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String validToken = jwtFactory.createValidToken(userId, 1L);
+
+            given(userRepository.findAuthState(userId))
+                    .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 1L)));
+
+            mockMvc.perform(post("/api/dev/simulate-earthquake")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(403)))
+                    .andExpect(jsonPath("$.title", is("Forbidden")));
         }
     }
 
