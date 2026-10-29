@@ -1,5 +1,8 @@
 server:
   forward-headers-strategy: native
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:50}
 
 spring:
   datasource:
