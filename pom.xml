@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.1.1</version>
+		<version>4.1.2</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>dev.romulus-lanceues</groupId>
@@ -28,6 +28,9 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<!-- Security patches for transitive dependencies -->
+		<jackson-2-bom.version>2.21.8</jackson-2-bom.version>
+		<logback.version>1.6.6</logback.version>
 	</properties>
 	<dependencies>
 
@@ -35,6 +38,12 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
+		</dependency>
+
+		<!--Spring Boot Actuator for health checks and probes-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 
 		<dependency>
@@ -131,7 +140,7 @@
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcprov-jdk18on</artifactId>
-			<version>1.85.2</version>
+			<version>1.86</version>
 		</dependency>
 
 		<!--Spring Validation dependency-->
@@ -144,7 +153,7 @@
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>3.1.0</version>
+			<version>3.2.0</version>
 		</dependency>
 
 		<!--OAuth2 resource dependency for JWT validation-->

@@ -1,0 +1,16 @@
+.git
+.github
+.agents
+.gemini
+.cursor
+.idea
+.vscode
+.env
+.env.*
+target
+deploy
+HELP.md
+README.md
+*.log
+docker-compose*.yaml
+src/main/java/dev/romulus_lanceues/tanaw_api/dev

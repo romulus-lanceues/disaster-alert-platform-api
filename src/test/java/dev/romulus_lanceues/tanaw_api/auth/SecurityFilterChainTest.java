@@ -31,12 +31,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = {AuthController.class, UserController.class})
+@WebMvcTest(controllers = {AuthController.class, UserController.class, CsrfController.class})
 @Import({
         SecurityConfig.class,
         GlobalExceptionHandler.class,
@@ -306,6 +307,124 @@ class SecurityFilterChainTest {
                     .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
                     .andExpect(jsonPath("$.status", is(401)))
                     .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+    }
+
+    @Nested
+    @DisplayName("Dev endpoint restriction in non-dev profile")
+    class DevEndpointRestriction {
+
+        @Test
+        @DisplayName("POST /api/dev/simulate-earthquake without token is denied with 401 ProblemDetail when non-dev")
+        void simulateEarthquake_unauthenticated_isDeniedWith401() throws Exception {
+            mockMvc.perform(post("/api/dev/simulate-earthquake"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+
+        @Test
+        @DisplayName("GET /api/dev/test without token is denied with 401 ProblemDetail when non-dev")
+        void getDevEndpoint_unauthenticated_isDeniedWith401() throws Exception {
+            mockMvc.perform(get("/api/dev/test"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+
+        @Test
+        @DisplayName("POST /api/dev/simulate-earthquake even with valid JWT is denied with 403 ProblemDetail when non-dev")
+        void simulateEarthquake_authenticated_isDeniedWith403() throws Exception {
+            UUID userId = UUID.randomUUID();
+            String validToken = jwtFactory.createValidToken(userId, 1L);
+
+            given(userRepository.findAuthState(userId))
+                    .willReturn(Optional.of(new UserAuthState(UserStatus.ACTIVE, 1L)));
+
+            mockMvc.perform(post("/api/dev/simulate-earthquake")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(403)))
+                    .andExpect(jsonPath("$.title", is("Forbidden")));
+        }
+    }
+
+    @Nested
+    @DisplayName("Actuator endpoint security")
+    class ActuatorEndpointSecurity {
+
+        @Test
+        @DisplayName("GET /actuator/health is permitted without token and passes security filter chain")
+        void health_isPermittedWithoutToken() throws Exception {
+            mockMvc.perform(get("/actuator/health"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("GET /actuator/health/readiness is permitted without token and passes security filter chain")
+        void healthReadiness_isPermittedWithoutToken() throws Exception {
+            mockMvc.perform(get("/actuator/health/readiness"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("GET /actuator/info is permitted without token and passes security filter chain")
+        void info_isPermittedWithoutToken() throws Exception {
+            mockMvc.perform(get("/actuator/info"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("GET /actuator/env is denied with 401 Unauthorized ProblemDetail")
+        void env_isDeniedWith401ProblemDetail() throws Exception {
+            mockMvc.perform(get("/actuator/env"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE)))
+                    .andExpect(jsonPath("$.status", is(401)))
+                    .andExpect(jsonPath("$.title", is("Unauthorized")));
+        }
+    }
+
+    @Nested
+    @DisplayName("CORS enforcement")
+    class CorsEnforcement {
+
+        @Test
+        @DisplayName("OPTIONS preflight to /api/v1/users/me with allowed origin succeeds with 200 and CORS headers")
+        void preflight_allowedOrigin_succeeds() throws Exception {
+            mockMvc.perform(options("/api/v1/users/me")
+                            .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Authorization"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"))
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET,POST,PUT,PATCH,DELETE,OPTIONS"));
+        }
+
+        @Test
+        @DisplayName("OPTIONS preflight to /api/v1/auth/login with allowed origin succeeds with 200 and CORS headers")
+        void preflight_authEndpoint_allowedOrigin_succeeds() throws Exception {
+            mockMvc.perform(options("/api/v1/auth/login")
+                            .header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Content-Type,X-XSRF-TOKEN"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:5173"))
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+        }
+
+        @Test
+        @DisplayName("OPTIONS preflight with disallowed origin does not return Access-Control-Allow-Origin")
+        void preflight_disallowedOrigin_rejected() throws Exception {
+            mockMvc.perform(options("/api/v1/users/me")
+                            .header(HttpHeaders.ORIGIN, "http://evil-attacker.com")
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+                    .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN))
+                    .andExpect(status().isForbidden());
         }
     }
 }
