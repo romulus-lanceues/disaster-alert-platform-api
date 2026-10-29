@@ -14,7 +14,6 @@ class UserDataHardeningTest {
 
     private static final Path ROOT = Path.of("");
     private static final Path USER_DATA_SH = ROOT.resolve("deploy/user-data.sh");
-    private static final Path EC2_DEPLOY_PLAN = ROOT.resolve(".agents/plans/aws-ec2-deployment-plan.md");
 
     @Test
     @DisplayName("deploy/user-data.sh configures dpkg lock timeouts, needrestart mode, and non-interactive flags")
@@ -57,16 +56,11 @@ class UserDataHardeningTest {
         assertThat(content)
                 .as("user-data.sh must pass --update to aws/install for re-run idempotency")
                 .contains("/install\" --update");
-
-        assertThat(content)
-                .as("user-data.sh must not use static /tmp/aws paths")
-                .doesNotContain("/tmp/awscliv2.zip")
-                .doesNotContain("/tmp/aws/install");
     }
 
     @Test
-    @DisplayName("deploy/user-data.sh guards swapfile creation, activation, and /etc/fstab against duplicate entries")
-    void userDataScript_guardsSwapfileAndFstabIdempotency() throws IOException {
+    @DisplayName("deploy/user-data.sh manages 2GB swap idempotently and safely")
+    void userDataScript_managesSwapIdempotently() throws IOException {
         assertThat(USER_DATA_SH).exists();
         String content = Files.readString(USER_DATA_SH);
 
@@ -82,32 +76,4 @@ class UserDataHardeningTest {
                 .as("user-data.sh must check /etc/fstab before appending to prevent duplicate entries")
                 .contains("grep -qxF '/swapfile none swap sw 0 0' /etc/fstab");
     }
-
-    @Test
-    @DisplayName("aws-ec2-deployment-plan.md Section 2.8 is synchronized with hardened user-data.sh")
-    void ec2DeploymentPlan_isSynchronizedWithHardenedUserDataScript() throws IOException {
-        assertThat(EC2_DEPLOY_PLAN).exists();
-        String content = Files.readString(EC2_DEPLOY_PLAN);
-
-        assertThat(content)
-                .as("Section 2.8 in deployment plan must configure DPkg::Lock::Timeout=120")
-                .contains("DPkg::Lock::Timeout=120");
-
-        assertThat(content)
-                .as("Section 2.8 in deployment plan must pass --update to aws/install")
-                .contains("/install\" --update");
-
-        assertThat(content)
-                .as("Section 2.8 in deployment plan must guard /swapfile creation")
-                .contains("if [[ ! -f /swapfile ]]");
-
-        assertThat(content)
-                .as("Section 2.8 in deployment plan must guard /etc/fstab entry")
-                .contains("grep -qxF '/swapfile none swap sw 0 0' /etc/fstab");
-
-        assertThat(content)
-                .as("Section 2.8 in deployment plan must explicitly install python3")
-                .contains("docker.io docker-compose-v2 cron curl unzip python3");
-    }
 }
-

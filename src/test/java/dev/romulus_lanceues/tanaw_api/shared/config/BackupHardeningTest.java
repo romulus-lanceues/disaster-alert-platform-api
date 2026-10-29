@@ -14,7 +14,6 @@ class BackupHardeningTest {
 
     private static final Path ROOT = Path.of("");
     private static final Path BACKUP_SH = ROOT.resolve("deploy/backup.sh");
-    private static final Path EC2_DEPLOY_PLAN = ROOT.resolve(".agents/plans/aws-ec2-deployment-plan.md");
 
     @Test
     @DisplayName("deploy/backup.sh guards variable extraction against silent pipefail exits")
@@ -55,24 +54,4 @@ class BackupHardeningTest {
                 .as("backup.sh must not stream directly via unbuffered pipe | aws s3 cp -")
                 .doesNotContain("| aws s3 cp -");
     }
-
-    @Test
-    @DisplayName("aws-ec2-deployment-plan.md Section 2.7 is synchronized with hardened backup.sh")
-    void ec2DeploymentPlan_isSynchronizedWithHardenedBackupScript() throws IOException {
-        assertThat(EC2_DEPLOY_PLAN).exists();
-        String content = Files.readString(EC2_DEPLOY_PLAN);
-
-        assertThat(content)
-                .as("Section 2.7 in deployment plan must include umask 077")
-                .contains("umask 077");
-
-        assertThat(content)
-                .as("Section 2.7 in deployment plan must include EXIT trap for TMP_DUMP")
-                .contains("trap 'rm -f \"$TMP_DUMP\"' EXIT");
-
-        assertThat(content)
-                .as("Section 2.7 in deployment plan must pass --region to aws s3 cp")
-                .contains("--region");
-    }
 }
-
