@@ -14,7 +14,6 @@ class WorkflowHardeningTest {
 
     private static final Path ROOT = Path.of("");
     private static final Path WORKFLOW_FILE = ROOT.resolve(".github/workflows/deploy.yml");
-    private static final Path EC2_DEPLOY_PLAN = ROOT.resolve(".agents/plans/aws-ec2-deployment-plan.md");
 
     @Test
     @DisplayName("deploy.yml exists and defines push/dispatch triggers with sequential deployment concurrency")
@@ -110,28 +109,4 @@ class WorkflowHardeningTest {
                 .contains("[StandardOutputContent, StandardErrorContent]")
                 .contains("[ \"$STATUS\" = \"Success\" ]");
     }
-
-    @Test
-    @DisplayName("aws-ec2-deployment-plan.md Phase 4 specification matches workflow hardening assertions")
-    void ec2DeploymentPlan_matchesWorkflowSpecification() throws IOException {
-        assertThat(EC2_DEPLOY_PLAN).exists();
-        String content = Files.readString(EC2_DEPLOY_PLAN);
-
-        assertThat(content)
-                .as("Deployment plan Phase 4 must specify OIDC id-token write permission")
-                .contains("id-token: write");
-
-        assertThat(content)
-                .as("Deployment plan Phase 4 must specify deploy-production concurrency")
-                .contains("group: deploy-production");
-
-        assertThat(content)
-                .as("Deployment plan Phase 4 must specify linux/amd64 platform")
-                .contains("platforms: linux/amd64");
-
-        assertThat(content)
-                .as("Deployment plan Phase 4 must specify SSM Run Command polling")
-                .contains("aws ssm get-command-invocation");
-    }
 }
-

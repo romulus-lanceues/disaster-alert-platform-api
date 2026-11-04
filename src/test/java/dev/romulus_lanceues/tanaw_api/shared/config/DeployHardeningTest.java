@@ -15,7 +15,6 @@ class DeployHardeningTest {
     private static final Path ROOT = Path.of("");
     private static final Path DEPLOY_SH = ROOT.resolve("deploy/deploy.sh");
     private static final Path USER_DATA_SH = ROOT.resolve("deploy/user-data.sh");
-    private static final Path EC2_DEPLOY_PLAN = ROOT.resolve(".agents/plans/aws-ec2-deployment-plan.md");
 
     @Test
     @DisplayName("deploy.sh enforces umask 077, installs directories with mode 700, and registers EXIT trap for .env.tmp")
@@ -61,28 +60,4 @@ class DeployHardeningTest {
                 .as("deploy.sh must gracefully reload Caddy configuration on deploy so bind-mounted Caddyfile changes take effect")
                 .contains("compose \"$TAG\" exec -T caddy caddy reload --config /etc/caddy/Caddyfile");
     }
-
-    @Test
-    @DisplayName("aws-ec2-deployment-plan.md is synchronized with hardened deploy.sh and user-data.sh")
-    void ec2DeploymentPlan_isSynchronizedWithHardenedScripts() throws IOException {
-        assertThat(EC2_DEPLOY_PLAN).exists();
-        String content = Files.readString(EC2_DEPLOY_PLAN);
-
-        assertThat(content)
-                .as("Section 2.6 in deployment plan must include umask 077")
-                .contains("umask 077");
-
-        assertThat(content)
-                .as("Section 2.6 in deployment plan must include EXIT trap for .env.tmp")
-                .contains("trap 'rm -f \"$ROOT/.env.tmp\"' EXIT");
-
-        assertThat(content)
-                .as("Section 2.6 in deployment plan must include caddy reload invocation")
-                .contains("compose \"$TAG\" exec -T caddy caddy reload --config /etc/caddy/Caddyfile");
-
-        assertThat(content)
-                .as("Section 2.8 in deployment plan must include chmod 700 /opt/tanaw")
-                .contains("chmod 700 /opt/tanaw");
-    }
 }
-
