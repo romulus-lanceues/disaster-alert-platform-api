@@ -59,10 +59,9 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    @Profile("dev")
-    public SecurityFilterChain devSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain opsSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/api/dev/**")
+                .securityMatcher("/api/ops/**")
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
