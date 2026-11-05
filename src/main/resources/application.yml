@@ -90,3 +90,8 @@ notification:
     read-timeout: PT10S
   crypto:
     key: ${NOTIFICATION_CRYPTO_KEY}
+
+tanaw:
+  ops:
+    enabled: ${OPS_SIMULATION_ENABLED:false}
+    simulation-key: ${OPS_SIMULATION_KEY:}
