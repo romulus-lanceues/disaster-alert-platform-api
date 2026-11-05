@@ -5,6 +5,8 @@ import dev.romulus_lanceues.tanaw_api.auth.JwtAuthConverter;
 import dev.romulus_lanceues.tanaw_api.auth.JwtProperties;
 import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAccessDeniedHandler;
 import dev.romulus_lanceues.tanaw_api.auth.ProblemDetailsAuthenticationEntryPoint;
+import dev.romulus_lanceues.tanaw_api.ops.OpsApiKeyAuthenticationFilter;
+import dev.romulus_lanceues.tanaw_api.ops.OpsSimulationProperties;
 import dev.romulus_lanceues.tanaw_api.user.UserRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -22,18 +24,20 @@ import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
 import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, OpsSimulationProperties.class})
 public class SecurityConfig {
 
     @Bean
@@ -59,7 +63,13 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    public SecurityFilterChain opsSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain opsSecurityFilterChain(
+            HttpSecurity http,
+            OpsSimulationProperties opsProperties,
+            ObjectMapper objectMapper,
+            ProblemDetailsAuthenticationEntryPoint authenticationEntryPoint,
+            ProblemDetailsAccessDeniedHandler accessDeniedHandler
+    ) throws Exception {
         http
                 .securityMatcher("/api/ops/**")
                 .cors(Customizer.withDefaults())
@@ -68,8 +78,15 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .csrf(AbstractHttpConfigurer::disable)
+                .addFilterBefore(
+                        new OpsApiKeyAuthenticationFilter(opsProperties, objectMapper),
+                        UsernamePasswordAuthenticationFilter.class
+                )
                 .authorizeHttpRequests(authorize -> authorize
-                        .anyRequest().permitAll());
+                        .anyRequest().hasRole("OPS"))
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler));
 
         return http.build();
     }
