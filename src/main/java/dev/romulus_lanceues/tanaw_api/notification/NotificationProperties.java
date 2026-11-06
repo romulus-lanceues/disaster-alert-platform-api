@@ -121,6 +121,23 @@ public record NotificationProperties(
 
     public record Telegram(
             String botToken,
-            String botUsername
-    ) {}
+            String botUsername,
+            Duration connectTimeout,
+            Duration readTimeout
+    ) {
+        public Telegram {
+            if (connectTimeout == null) {
+                connectTimeout = Duration.ofSeconds(3);
+            }
+            if (readTimeout == null) {
+                readTimeout = Duration.ofSeconds(10);
+            }
+            if (connectTimeout.isZero() || connectTimeout.isNegative()) {
+                throw new IllegalArgumentException("Telegram connect timeout must be positive.");
+            }
+            if (readTimeout.isZero() || readTimeout.isNegative()) {
+                throw new IllegalArgumentException("Telegram read timeout must be positive.");
+            }
+        }
+    }
 }

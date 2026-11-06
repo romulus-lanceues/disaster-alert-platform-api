@@ -88,6 +88,11 @@ notification:
   discord:
     connect-timeout: PT3S
     read-timeout: PT10S
+  telegram:
+    connect-timeout: PT3S
+    read-timeout: PT10S
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    bot-username: ${TELEGRAM_BOT_USERNAME:}
   crypto:
     key: ${NOTIFICATION_CRYPTO_KEY}
 
