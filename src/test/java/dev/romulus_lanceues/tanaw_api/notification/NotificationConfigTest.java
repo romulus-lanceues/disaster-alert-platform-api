@@ -5,6 +5,8 @@ import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordNotificationSender;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordTestSender;
+import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramDestinationValidator;
+import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramTestSender;
 import dev.romulus_lanceues.tanaw_api.notification.destination.DestinationMasker;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.EndpointTestRateLimiter;
 import org.junit.jupiter.api.DisplayName;
@@ -27,6 +29,8 @@ class NotificationConfigTest {
                     DiscordTestSender.class,
                     DiscordNotificationSender.class,
                     DiscordDestinationValidator.class,
+                    TelegramTestSender.class,
+                    TelegramDestinationValidator.class,
                     DestinationMasker.class,
                     EndpointTestRateLimiter.class,
                     ChannelSupportRegistry.class
@@ -55,16 +59,22 @@ class NotificationConfigTest {
             assertThat(context).hasNotFailed();
             assertThat(context).hasBean("discordRestClient");
             assertThat(context).getBean("discordRestClient").isInstanceOf(RestClient.class);
+            assertThat(context).hasBean("telegramRestClient");
+            assertThat(context).getBean("telegramRestClient").isInstanceOf(RestClient.class);
             assertThat(context).hasSingleBean(DiscordTestSender.class);
             assertThat(context).hasSingleBean(DiscordNotificationSender.class);
+            assertThat(context).hasSingleBean(TelegramTestSender.class);
+            assertThat(context).hasSingleBean(TelegramDestinationValidator.class);
             assertThat(context).hasSingleBean(EndpointTestRateLimiter.class);
             assertThat(context).hasSingleBean(ChannelSupportRegistry.class);
 
             ChannelSupportRegistry registry = context.getBean(ChannelSupportRegistry.class);
             assertThat(registry.isSupported(NotificationChannel.DISCORD)).isTrue();
+            assertThat(registry.isSupported(NotificationChannel.TELEGRAM)).isTrue();
             assertThat(registry.isSupported(NotificationChannel.EMAIL)).isFalse();
             assertThat(registry.hasSender(NotificationChannel.DISCORD)).isTrue();
             assertThat(registry.getSender(NotificationChannel.DISCORD)).isInstanceOf(DiscordNotificationSender.class);
+            assertThat(registry.hasSender(NotificationChannel.TELEGRAM)).isFalse();
             assertThat(registry.hasSender(NotificationChannel.EMAIL)).isFalse();
         });
     }
