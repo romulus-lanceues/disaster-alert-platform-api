@@ -169,6 +169,12 @@
 			<version>5.5.1</version>
 		</dependency>
 
+		<!--Spring Mail dependency for email notifications-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
+
 	</dependencies>
 
 	<build>

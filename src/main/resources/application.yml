@@ -11,6 +11,9 @@ management:
       show-details: never
       probes:
         enabled: true
+  health:
+    mail:
+      enabled: false
 
 spring:
   application:
@@ -37,6 +40,32 @@ spring:
 
   flyway:
     enabled: true
+
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE:false}
+            required: false
+          connectiontimeout: 5000
+          timeout: 10000
+          writetimeout: 10000
+        smtps:
+          auth: ${SPRING_MAIL_PROPERTIES_MAIL_SMTPS_AUTH:false}
+          starttls:
+            enable: ${SPRING_MAIL_PROPERTIES_MAIL_SMTPS_STARTTLS_ENABLE:false}
+            required: false
+          connectiontimeout: 5000
+          timeout: 10000
+          writetimeout: 10000
 
 springdoc:
   api-docs:
