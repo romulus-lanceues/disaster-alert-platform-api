@@ -5,6 +5,7 @@ import dev.romulus_lanceues.tanaw_api.notification.channel.ChannelSupportRegistr
 import dev.romulus_lanceues.tanaw_api.notification.channel.ChannelVerifier;
 import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordDestinationValidator;
+import dev.romulus_lanceues.tanaw_api.notification.channel.email.EmailDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.destination.DestinationMasker;
 import dev.romulus_lanceues.tanaw_api.user.User;
@@ -31,6 +32,7 @@ public class NotificationEndpointService {
     private final ChannelSupportRegistry channelSupportRegistry;
     private final DiscordDestinationValidator discordDestinationValidator;
     private final TelegramDestinationValidator telegramDestinationValidator;
+    private final EmailDestinationValidator emailDestinationValidator;
     private final DestinationMasker destinationMasker;
     private final EndpointTestRateLimiter endpointTestRateLimiter;
     private final Clock clock;
@@ -71,6 +73,8 @@ public class NotificationEndpointService {
             discordDestinationValidator.validate(destination);
         } else if (channel == NotificationChannel.TELEGRAM) {
             telegramDestinationValidator.validate(destination);
+        } else if (channel == NotificationChannel.EMAIL) {
+            emailDestinationValidator.validate(destination);
         }
 
         String destinationHint = destinationMasker.mask(channel, destination);

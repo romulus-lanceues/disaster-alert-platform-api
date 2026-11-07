@@ -8,6 +8,7 @@ import dev.romulus_lanceues.tanaw_api.notification.channel.InvalidDestinationExc
 import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.notification.channel.UnsupportedNotificationChannelException;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordDestinationValidator;
+import dev.romulus_lanceues.tanaw_api.notification.channel.email.EmailDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.destination.DestinationMasker;
 import dev.romulus_lanceues.tanaw_api.user.User;
@@ -63,6 +64,9 @@ class NotificationEndpointServiceTest {
     private TelegramDestinationValidator telegramDestinationValidator;
 
     @Mock
+    private EmailDestinationValidator emailDestinationValidator;
+
+    @Mock
     private DestinationMasker destinationMasker;
 
     @Mock
@@ -92,6 +96,7 @@ class NotificationEndpointServiceTest {
                 channelSupportRegistry,
                 discordDestinationValidator,
                 telegramDestinationValidator,
+                emailDestinationValidator,
                 destinationMasker,
                 endpointTestRateLimiter,
                 clock
@@ -389,6 +394,99 @@ class NotificationEndpointServiceTest {
 
             then(notificationEndpointRepository).should(never()).save(any());
             then(discordDestinationValidator).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("creates new Email endpoint with verifiedAt=null when not existing")
+        void createsNewEmailEndpointWhenNotExisting() {
+            String validEmail = "alerts@tanaw.dev";
+            String maskedEmailHint = "a***@tanaw.dev";
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.EMAIL);
+            willDoNothing().given(emailDestinationValidator).validate(validEmail);
+            given(destinationMasker.mask(NotificationChannel.EMAIL, validEmail))
+                    .willReturn(maskedEmailHint);
+            given(notificationEndpointRepository.findByUserIdAndChannel(userId, NotificationChannel.EMAIL))
+                    .willReturn(Optional.empty());
+
+            ArgumentCaptor<NotificationEndpoint> captor = ArgumentCaptor.forClass(NotificationEndpoint.class);
+            given(notificationEndpointRepository.save(captor.capture()))
+                    .willAnswer(invocation -> invocation.getArgument(0));
+
+            NotificationEndpointResponse response = service.upsertEndpoint(userId, NotificationChannel.EMAIL, validEmail);
+
+            assertThat(response.channel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(response.destinationHint()).isEqualTo(maskedEmailHint);
+            assertThat(response.enabled()).isTrue();
+            assertThat(response.verifiedAt()).isNull();
+
+            NotificationEndpoint saved = captor.getValue();
+            assertThat(saved.getUser()).isEqualTo(testUser);
+            assertThat(saved.getChannel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(saved.getDestination()).isEqualTo(validEmail);
+            assertThat(saved.getDestinationHint()).isEqualTo(maskedEmailHint);
+            assertThat(saved.isEnabled()).isTrue();
+            assertThat(saved.getVerifiedAt()).isNull();
+
+            then(emailDestinationValidator).should().validate(validEmail);
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+            then(telegramDestinationValidator).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("updates existing Email endpoint destination and resets verifiedAt to null")
+        void updatesExistingEmailEndpointAndResetsVerifiedAt() {
+            String validEmail = "new-email@tanaw.dev";
+            String maskedEmailHint = "n***@tanaw.dev";
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.EMAIL);
+            willDoNothing().given(emailDestinationValidator).validate(validEmail);
+            given(destinationMasker.mask(NotificationChannel.EMAIL, validEmail))
+                    .willReturn(maskedEmailHint);
+
+            NotificationEndpoint existingEndpoint = NotificationEndpoint.builder()
+                    .id(endpointId)
+                    .user(testUser)
+                    .channel(NotificationChannel.EMAIL)
+                    .destination("old-email@tanaw.dev")
+                    .destinationHint("o***@tanaw.dev")
+                    .enabled(true)
+                    .verifiedAt(now.minusSeconds(3600))
+                    .build();
+
+            given(notificationEndpointRepository.findByUserIdAndChannel(userId, NotificationChannel.EMAIL))
+                    .willReturn(Optional.of(existingEndpoint));
+            given(notificationEndpointRepository.save(existingEndpoint)).willReturn(existingEndpoint);
+
+            NotificationEndpointResponse response = service.upsertEndpoint(userId, NotificationChannel.EMAIL, validEmail);
+
+            assertThat(existingEndpoint.getDestination()).isEqualTo(validEmail);
+            assertThat(existingEndpoint.getDestinationHint()).isEqualTo(maskedEmailHint);
+            assertThat(existingEndpoint.getVerifiedAt()).isNull();
+            assertThat(response.verifiedAt()).isNull();
+            then(notificationEndpointRepository).should().save(existingEndpoint);
+            then(emailDestinationValidator).should().validate(validEmail);
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+            then(telegramDestinationValidator).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("throws InvalidDestinationException when Email destination format is invalid")
+        void throwsInvalidDestinationExceptionForInvalidEmailDestination() {
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.EMAIL);
+            willThrow(new InvalidDestinationException("Email destination must not contain whitespace"))
+                    .given(emailDestinationValidator).validate("invalid email@test.com");
+
+            assertThatThrownBy(() -> service.upsertEndpoint(userId, NotificationChannel.EMAIL, "invalid email@test.com"))
+                    .isInstanceOf(InvalidDestinationException.class)
+                    .hasMessageContaining("whitespace");
+
+            then(notificationEndpointRepository).should(never()).save(any());
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+            then(telegramDestinationValidator).shouldHaveNoInteractions();
         }
     }
 
