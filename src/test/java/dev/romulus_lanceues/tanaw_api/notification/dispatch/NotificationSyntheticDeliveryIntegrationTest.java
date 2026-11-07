@@ -20,6 +20,7 @@ import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordNotificationSender;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordTestSender;
+import dev.romulus_lanceues.tanaw_api.notification.channel.email.EmailDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.destination.DestinationMasker;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.EndpointTestRateLimiter;
@@ -83,6 +84,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
         DestinationMasker.class,
         DiscordDestinationValidator.class,
         TelegramDestinationValidator.class,
+        EmailDestinationValidator.class,
         DiscordNotificationSender.class,
         DiscordTestSender.class,
         ChannelSupportRegistry.class,
