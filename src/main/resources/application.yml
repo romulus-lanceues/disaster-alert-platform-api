@@ -93,6 +93,11 @@ notification:
     read-timeout: PT10S
     bot-token: ${TELEGRAM_BOT_TOKEN:}
     bot-username: ${TELEGRAM_BOT_USERNAME:}
+  email:
+    from-address: ${NOTIFICATION_EMAIL_FROM_ADDRESS:no-reply@tanaw.dev}
+    from-name: ${NOTIFICATION_EMAIL_FROM_NAME:Tanaw Alerts}
+    connect-timeout: PT5S
+    read-timeout: PT10S
   crypto:
     key: ${NOTIFICATION_CRYPTO_KEY}
 
