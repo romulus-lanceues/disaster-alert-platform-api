@@ -8,6 +8,8 @@ import dev.romulus_lanceues.tanaw_api.notification.channel.InvalidDestinationExc
 import dev.romulus_lanceues.tanaw_api.notification.channel.NotificationChannel;
 import dev.romulus_lanceues.tanaw_api.notification.channel.UnsupportedNotificationChannelException;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordDestinationValidator;
+import dev.romulus_lanceues.tanaw_api.notification.channel.email.EmailDestinationValidator;
+import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramDestinationValidator;
 import dev.romulus_lanceues.tanaw_api.notification.destination.DestinationMasker;
 import dev.romulus_lanceues.tanaw_api.user.User;
 import dev.romulus_lanceues.tanaw_api.user.UserNotFoundException;
@@ -59,6 +61,12 @@ class NotificationEndpointServiceTest {
     private DiscordDestinationValidator discordDestinationValidator;
 
     @Mock
+    private TelegramDestinationValidator telegramDestinationValidator;
+
+    @Mock
+    private EmailDestinationValidator emailDestinationValidator;
+
+    @Mock
     private DestinationMasker destinationMasker;
 
     @Mock
@@ -66,6 +74,9 @@ class NotificationEndpointServiceTest {
 
     @Mock
     private ChannelVerifier discordChannelVerifier;
+
+    @Mock
+    private ChannelVerifier telegramChannelVerifier;
 
     private final Instant now = Instant.parse("2026-10-16T12:00:00Z");
     private final Clock clock = Clock.fixed(now, ZoneOffset.UTC);
@@ -84,6 +95,8 @@ class NotificationEndpointServiceTest {
                 userRepository,
                 channelSupportRegistry,
                 discordDestinationValidator,
+                telegramDestinationValidator,
+                emailDestinationValidator,
                 destinationMasker,
                 endpointTestRateLimiter,
                 clock
@@ -294,6 +307,187 @@ class NotificationEndpointServiceTest {
 
             then(notificationEndpointRepository).should(never()).save(any());
         }
+
+        @Test
+        @DisplayName("creates new Telegram endpoint with verifiedAt=null when not existing")
+        void createsNewTelegramEndpointWhenNotExisting() {
+            String validTelegramChatId = "987654321";
+            String maskedTelegramHint = "Telegram chat ...4321";
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.TELEGRAM);
+            willDoNothing().given(telegramDestinationValidator).validate(validTelegramChatId);
+            given(destinationMasker.mask(NotificationChannel.TELEGRAM, validTelegramChatId))
+                    .willReturn(maskedTelegramHint);
+            given(notificationEndpointRepository.findByUserIdAndChannel(userId, NotificationChannel.TELEGRAM))
+                    .willReturn(Optional.empty());
+
+            ArgumentCaptor<NotificationEndpoint> captor = ArgumentCaptor.forClass(NotificationEndpoint.class);
+            given(notificationEndpointRepository.save(captor.capture()))
+                    .willAnswer(invocation -> invocation.getArgument(0));
+
+            NotificationEndpointResponse response = service.upsertEndpoint(userId, NotificationChannel.TELEGRAM, validTelegramChatId);
+
+            assertThat(response.channel()).isEqualTo(NotificationChannel.TELEGRAM);
+            assertThat(response.destinationHint()).isEqualTo(maskedTelegramHint);
+            assertThat(response.enabled()).isTrue();
+            assertThat(response.verifiedAt()).isNull();
+
+            NotificationEndpoint saved = captor.getValue();
+            assertThat(saved.getUser()).isEqualTo(testUser);
+            assertThat(saved.getChannel()).isEqualTo(NotificationChannel.TELEGRAM);
+            assertThat(saved.getDestination()).isEqualTo(validTelegramChatId);
+            assertThat(saved.getDestinationHint()).isEqualTo(maskedTelegramHint);
+            assertThat(saved.isEnabled()).isTrue();
+            assertThat(saved.getVerifiedAt()).isNull();
+
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+            then(telegramDestinationValidator).should().validate(validTelegramChatId);
+        }
+
+        @Test
+        @DisplayName("updates existing Telegram endpoint destination and resets verifiedAt to null")
+        void updatesExistingTelegramEndpointAndResetsVerifiedAt() {
+            String validTelegramChatId = "987654321";
+            String maskedTelegramHint = "Telegram chat ...4321";
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.TELEGRAM);
+            willDoNothing().given(telegramDestinationValidator).validate(validTelegramChatId);
+            given(destinationMasker.mask(NotificationChannel.TELEGRAM, validTelegramChatId))
+                    .willReturn(maskedTelegramHint);
+
+            NotificationEndpoint existingEndpoint = NotificationEndpoint.builder()
+                    .id(endpointId)
+                    .user(testUser)
+                    .channel(NotificationChannel.TELEGRAM)
+                    .destination("123456789")
+                    .destinationHint("Telegram chat ...6789")
+                    .enabled(true)
+                    .verifiedAt(now.minusSeconds(3600))
+                    .build();
+
+            given(notificationEndpointRepository.findByUserIdAndChannel(userId, NotificationChannel.TELEGRAM))
+                    .willReturn(Optional.of(existingEndpoint));
+            given(notificationEndpointRepository.save(existingEndpoint)).willReturn(existingEndpoint);
+
+            NotificationEndpointResponse response = service.upsertEndpoint(userId, NotificationChannel.TELEGRAM, validTelegramChatId);
+
+            assertThat(existingEndpoint.getDestination()).isEqualTo(validTelegramChatId);
+            assertThat(existingEndpoint.getDestinationHint()).isEqualTo(maskedTelegramHint);
+            assertThat(existingEndpoint.getVerifiedAt()).isNull();
+            assertThat(response.verifiedAt()).isNull();
+            then(notificationEndpointRepository).should().save(existingEndpoint);
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("throws InvalidDestinationException when Telegram destination format is invalid")
+        void throwsInvalidDestinationExceptionForInvalidTelegramDestination() {
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.TELEGRAM);
+            willThrow(new InvalidDestinationException("Telegram destination must be a valid numeric chat ID or @username"))
+                    .given(telegramDestinationValidator).validate("invalid-chat-id");
+
+            assertThatThrownBy(() -> service.upsertEndpoint(userId, NotificationChannel.TELEGRAM, "invalid-chat-id"))
+                    .isInstanceOf(InvalidDestinationException.class);
+
+            then(notificationEndpointRepository).should(never()).save(any());
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("creates new Email endpoint with verifiedAt=null when not existing")
+        void createsNewEmailEndpointWhenNotExisting() {
+            String validEmail = "alerts@tanaw.dev";
+            String maskedEmailHint = "a***@tanaw.dev";
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.EMAIL);
+            willDoNothing().given(emailDestinationValidator).validate(validEmail);
+            given(destinationMasker.mask(NotificationChannel.EMAIL, validEmail))
+                    .willReturn(maskedEmailHint);
+            given(notificationEndpointRepository.findByUserIdAndChannel(userId, NotificationChannel.EMAIL))
+                    .willReturn(Optional.empty());
+
+            ArgumentCaptor<NotificationEndpoint> captor = ArgumentCaptor.forClass(NotificationEndpoint.class);
+            given(notificationEndpointRepository.save(captor.capture()))
+                    .willAnswer(invocation -> invocation.getArgument(0));
+
+            NotificationEndpointResponse response = service.upsertEndpoint(userId, NotificationChannel.EMAIL, validEmail);
+
+            assertThat(response.channel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(response.destinationHint()).isEqualTo(maskedEmailHint);
+            assertThat(response.enabled()).isTrue();
+            assertThat(response.verifiedAt()).isNull();
+
+            NotificationEndpoint saved = captor.getValue();
+            assertThat(saved.getUser()).isEqualTo(testUser);
+            assertThat(saved.getChannel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(saved.getDestination()).isEqualTo(validEmail);
+            assertThat(saved.getDestinationHint()).isEqualTo(maskedEmailHint);
+            assertThat(saved.isEnabled()).isTrue();
+            assertThat(saved.getVerifiedAt()).isNull();
+
+            then(emailDestinationValidator).should().validate(validEmail);
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+            then(telegramDestinationValidator).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("updates existing Email endpoint destination and resets verifiedAt to null")
+        void updatesExistingEmailEndpointAndResetsVerifiedAt() {
+            String validEmail = "new-email@tanaw.dev";
+            String maskedEmailHint = "n***@tanaw.dev";
+
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.EMAIL);
+            willDoNothing().given(emailDestinationValidator).validate(validEmail);
+            given(destinationMasker.mask(NotificationChannel.EMAIL, validEmail))
+                    .willReturn(maskedEmailHint);
+
+            NotificationEndpoint existingEndpoint = NotificationEndpoint.builder()
+                    .id(endpointId)
+                    .user(testUser)
+                    .channel(NotificationChannel.EMAIL)
+                    .destination("old-email@tanaw.dev")
+                    .destinationHint("o***@tanaw.dev")
+                    .enabled(true)
+                    .verifiedAt(now.minusSeconds(3600))
+                    .build();
+
+            given(notificationEndpointRepository.findByUserIdAndChannel(userId, NotificationChannel.EMAIL))
+                    .willReturn(Optional.of(existingEndpoint));
+            given(notificationEndpointRepository.save(existingEndpoint)).willReturn(existingEndpoint);
+
+            NotificationEndpointResponse response = service.upsertEndpoint(userId, NotificationChannel.EMAIL, validEmail);
+
+            assertThat(existingEndpoint.getDestination()).isEqualTo(validEmail);
+            assertThat(existingEndpoint.getDestinationHint()).isEqualTo(maskedEmailHint);
+            assertThat(existingEndpoint.getVerifiedAt()).isNull();
+            assertThat(response.verifiedAt()).isNull();
+            then(notificationEndpointRepository).should().save(existingEndpoint);
+            then(emailDestinationValidator).should().validate(validEmail);
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+            then(telegramDestinationValidator).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("throws InvalidDestinationException when Email destination format is invalid")
+        void throwsInvalidDestinationExceptionForInvalidEmailDestination() {
+            given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.EMAIL);
+            willThrow(new InvalidDestinationException("Email destination must not contain whitespace"))
+                    .given(emailDestinationValidator).validate("invalid email@test.com");
+
+            assertThatThrownBy(() -> service.upsertEndpoint(userId, NotificationChannel.EMAIL, "invalid email@test.com"))
+                    .isInstanceOf(InvalidDestinationException.class)
+                    .hasMessageContaining("whitespace");
+
+            then(notificationEndpointRepository).should(never()).save(any());
+            then(discordDestinationValidator).shouldHaveNoInteractions();
+            then(telegramDestinationValidator).shouldHaveNoInteractions();
+        }
     }
 
     @Nested
@@ -495,6 +689,67 @@ class NotificationEndpointServiceTest {
             assertThatThrownBy(() -> service.testEndpoint(userId, endpointId))
                     .isInstanceOf(EndpointVerificationException.class)
                     .hasMessageContaining("HTTP 404");
+
+            assertThat(endpoint.getVerifiedAt()).isNull();
+            then(notificationEndpointRepository).should(never()).save(any());
+        }
+
+        @Test
+        @DisplayName("acquires rate limiter, verifies Telegram via channel verifier, and marks endpoint verified on success")
+        void verifiesAndMarksTelegramEndpointVerifiedOnSuccess() {
+            NotificationEndpoint endpoint = NotificationEndpoint.builder()
+                    .id(endpointId)
+                    .user(testUser)
+                    .channel(NotificationChannel.TELEGRAM)
+                    .destination("987654321")
+                    .destinationHint("Telegram chat ...4321")
+                    .enabled(true)
+                    .verifiedAt(null)
+                    .build();
+
+            given(notificationEndpointRepository.findByIdAndUserId(endpointId, userId))
+                    .willReturn(Optional.of(endpoint));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.TELEGRAM);
+            willDoNothing().given(endpointTestRateLimiter).acquire(userId);
+            given(channelSupportRegistry.getVerifier(NotificationChannel.TELEGRAM))
+                    .willReturn(telegramChannelVerifier);
+            willDoNothing().given(telegramChannelVerifier).verify(endpoint.getDestination());
+            given(notificationEndpointRepository.save(endpoint)).willReturn(endpoint);
+
+            NotificationEndpointResponse response = service.testEndpoint(userId, endpointId);
+
+            assertThat(endpoint.getVerifiedAt()).isEqualTo(now);
+            assertThat(response.verifiedAt()).isEqualTo(now);
+            then(endpointTestRateLimiter).should().acquire(userId);
+            then(telegramChannelVerifier).should().verify(endpoint.getDestination());
+            then(notificationEndpointRepository).should().save(endpoint);
+        }
+
+        @Test
+        @DisplayName("throws EndpointVerificationException and does not mark verified when Telegram verifier fails")
+        void doesNotMarkVerifiedWhenTelegramVerifierFails() {
+            NotificationEndpoint endpoint = NotificationEndpoint.builder()
+                    .id(endpointId)
+                    .user(testUser)
+                    .channel(NotificationChannel.TELEGRAM)
+                    .destination("987654321")
+                    .destinationHint("Telegram chat ...4321")
+                    .enabled(true)
+                    .verifiedAt(null)
+                    .build();
+
+            given(notificationEndpointRepository.findByIdAndUserId(endpointId, userId))
+                    .willReturn(Optional.of(endpoint));
+            willDoNothing().given(channelSupportRegistry).assertSupported(NotificationChannel.TELEGRAM);
+            willDoNothing().given(endpointTestRateLimiter).acquire(userId);
+            given(channelSupportRegistry.getVerifier(NotificationChannel.TELEGRAM))
+                    .willReturn(telegramChannelVerifier);
+            willThrow(new EndpointVerificationException("Telegram verification failed: HTTP 400"))
+                    .given(telegramChannelVerifier).verify(endpoint.getDestination());
+
+            assertThatThrownBy(() -> service.testEndpoint(userId, endpointId))
+                    .isInstanceOf(EndpointVerificationException.class)
+                    .hasMessageContaining("HTTP 400");
 
             assertThat(endpoint.getVerifiedAt()).isNull();
             then(notificationEndpointRepository).should(never()).save(any());

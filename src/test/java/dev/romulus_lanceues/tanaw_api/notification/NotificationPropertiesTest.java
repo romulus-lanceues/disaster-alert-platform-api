@@ -80,6 +80,7 @@ class NotificationPropertiesTest {
 
             assertThat(properties.crypto().key()).isEqualTo("dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng==");
             assertThat(properties.telegram()).isNull();
+            assertThat(properties.email()).isNull();
         }
 
         @Test
@@ -92,12 +93,55 @@ class NotificationPropertiesTest {
                     new NotificationProperties.Fanout(Duration.ofHours(6)),
                     new NotificationProperties.Discord(Duration.ofSeconds(3), Duration.ofSeconds(10)),
                     new NotificationProperties.Crypto("dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="),
-                    new NotificationProperties.Telegram("bot-token-123", "tanaw_bot")
+                    new NotificationProperties.Telegram("bot-token-123", "tanaw_bot", null, null)
             );
 
             assertThat(properties.telegram()).isNotNull();
             assertThat(properties.telegram().botToken()).isEqualTo("bot-token-123");
             assertThat(properties.telegram().botUsername()).isEqualTo("tanaw_bot");
+            assertThat(properties.telegram().connectTimeout()).isEqualTo(Duration.ofSeconds(3));
+            assertThat(properties.telegram().readTimeout()).isEqualTo(Duration.ofSeconds(10));
+        }
+
+        @Test
+        @DisplayName("valid parameters with explicit telegram timeouts succeed")
+        void validParametersWithExplicitTelegramTimeoutsSucceed() {
+            NotificationProperties properties = new NotificationProperties(
+                    false,
+                    new NotificationProperties.Dispatcher(true, Duration.ofSeconds(5), 50, Duration.ofMinutes(2)),
+                    new NotificationProperties.Retry(5, Duration.ofSeconds(10), Duration.ofMinutes(10)),
+                    new NotificationProperties.Fanout(Duration.ofHours(6)),
+                    new NotificationProperties.Discord(Duration.ofSeconds(3), Duration.ofSeconds(10)),
+                    new NotificationProperties.Crypto("dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="),
+                    new NotificationProperties.Telegram("bot-token-123", "tanaw_bot", Duration.ofSeconds(5), Duration.ofSeconds(15))
+            );
+
+            assertThat(properties.telegram()).isNotNull();
+            assertThat(properties.telegram().botToken()).isEqualTo("bot-token-123");
+            assertThat(properties.telegram().botUsername()).isEqualTo("tanaw_bot");
+            assertThat(properties.telegram().connectTimeout()).isEqualTo(Duration.ofSeconds(5));
+            assertThat(properties.telegram().readTimeout()).isEqualTo(Duration.ofSeconds(15));
+        }
+
+        @Test
+        @DisplayName("valid parameters including email succeed")
+        void validParametersWithEmailSucceed() {
+            NotificationProperties properties = new NotificationProperties(
+                    false,
+                    new NotificationProperties.Dispatcher(true, Duration.ofSeconds(5), 50, Duration.ofMinutes(2)),
+                    new NotificationProperties.Retry(5, Duration.ofSeconds(10), Duration.ofMinutes(10)),
+                    new NotificationProperties.Fanout(Duration.ofHours(6)),
+                    new NotificationProperties.Discord(Duration.ofSeconds(3), Duration.ofSeconds(10)),
+                    new NotificationProperties.Crypto("dGhpcy1pcy1hLXZlcnktc2VjdXJlLTI1Ni1iaXQta2V5LTEyMzQ1Ng=="),
+                    null,
+                    new NotificationProperties.Email("alerts@tanaw.dev", "Tanaw Alerts", Duration.ofSeconds(5), Duration.ofSeconds(10))
+            );
+
+            assertThat(properties.email()).isNotNull();
+            assertThat(properties.email().fromAddress()).isEqualTo("alerts@tanaw.dev");
+            assertThat(properties.email().fromName()).isEqualTo("Tanaw Alerts");
+            assertThat(properties.email().connectTimeout()).isEqualTo(Duration.ofSeconds(5));
+            assertThat(properties.email().readTimeout()).isEqualTo(Duration.ofSeconds(10));
         }
 
         @Test
@@ -241,6 +285,72 @@ class NotificationPropertiesTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("crypto key must not be blank");
         }
+
+        @Test
+        @DisplayName("Telegram null timeouts default to 3s connect and 10s read")
+        void telegramNullTimeoutsDefaultProperly() {
+            NotificationProperties.Telegram telegram = new NotificationProperties.Telegram(
+                    "token", "bot", null, null
+            );
+
+            assertThat(telegram.connectTimeout()).isEqualTo(Duration.ofSeconds(3));
+            assertThat(telegram.readTimeout()).isEqualTo(Duration.ofSeconds(10));
+        }
+
+        @Test
+        @DisplayName("Telegram invariants throw on non-positive timeouts")
+        void telegramInvariantsThrowOnNonPositiveTimeouts() {
+            assertThatThrownBy(() -> new NotificationProperties.Telegram("token", "bot", Duration.ZERO, Duration.ofSeconds(10)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Telegram connect timeout must be positive");
+
+            assertThatThrownBy(() -> new NotificationProperties.Telegram("token", "bot", Duration.ofSeconds(-1), Duration.ofSeconds(10)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Telegram connect timeout must be positive");
+
+            assertThatThrownBy(() -> new NotificationProperties.Telegram("token", "bot", Duration.ofSeconds(3), Duration.ZERO))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Telegram read timeout must be positive");
+
+            assertThatThrownBy(() -> new NotificationProperties.Telegram("token", "bot", Duration.ofSeconds(3), Duration.ofSeconds(-5)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Telegram read timeout must be positive");
+        }
+
+        @Test
+        @DisplayName("Email null fields default to no-reply@tanaw.dev, Tanaw Alerts, 5s connect, and 10s read")
+        void emailNullFieldsDefaultProperly() {
+            NotificationProperties.Email email = new NotificationProperties.Email(null, null, null, null);
+
+            assertThat(email.fromAddress()).isEqualTo("no-reply@tanaw.dev");
+            assertThat(email.fromName()).isEqualTo("Tanaw Alerts");
+            assertThat(email.connectTimeout()).isEqualTo(Duration.ofSeconds(5));
+            assertThat(email.readTimeout()).isEqualTo(Duration.ofSeconds(10));
+        }
+
+        @Test
+        @DisplayName("Email invariants throw on blank fromAddress or non-positive timeouts")
+        void emailInvariantsThrow() {
+            assertThatThrownBy(() -> new NotificationProperties.Email("   ", "Name", Duration.ofSeconds(5), Duration.ofSeconds(10)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Email fromAddress must not be blank");
+
+            assertThatThrownBy(() -> new NotificationProperties.Email("alerts@tanaw.dev", "Name", Duration.ZERO, Duration.ofSeconds(10)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Email connect timeout must be positive");
+
+            assertThatThrownBy(() -> new NotificationProperties.Email("alerts@tanaw.dev", "Name", Duration.ofSeconds(-1), Duration.ofSeconds(10)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Email connect timeout must be positive");
+
+            assertThatThrownBy(() -> new NotificationProperties.Email("alerts@tanaw.dev", "Name", Duration.ofSeconds(5), Duration.ZERO))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Email read timeout must be positive");
+
+            assertThatThrownBy(() -> new NotificationProperties.Email("alerts@tanaw.dev", "Name", Duration.ofSeconds(5), Duration.ofSeconds(-5)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Email read timeout must be positive");
+        }
     }
 
     @Nested
@@ -277,7 +387,7 @@ class NotificationPropertiesTest {
         }
 
         @Test
-        @DisplayName("binding with telegram properties sets telegram bean fields")
+        @DisplayName("binding with telegram properties sets telegram bean fields and default timeouts")
         void telegramPropertiesBindSuccessfully() {
             contextWithValidProperties()
                     .withPropertyValues(
@@ -290,6 +400,114 @@ class NotificationPropertiesTest {
                         assertThat(properties.telegram()).isNotNull();
                         assertThat(properties.telegram().botToken()).isEqualTo("telegram-token-xyz");
                         assertThat(properties.telegram().botUsername()).isEqualTo("tanaw_alert_bot");
+                        assertThat(properties.telegram().connectTimeout()).isEqualTo(Duration.ofSeconds(3));
+                        assertThat(properties.telegram().readTimeout()).isEqualTo(Duration.ofSeconds(10));
+                    });
+        }
+
+        @Test
+        @DisplayName("binding with custom telegram timeouts sets configured durations")
+        void customTelegramTimeoutsBindSuccessfully() {
+            contextWithValidProperties()
+                    .withPropertyValues(
+                            "notification.telegram.bot-token=telegram-token-xyz",
+                            "notification.telegram.bot-username=tanaw_alert_bot",
+                            "notification.telegram.connect-timeout=PT5S",
+                            "notification.telegram.read-timeout=PT20S"
+                    )
+                    .run(context -> {
+                        assertThat(context).hasNotFailed();
+                        NotificationProperties properties = context.getBean(NotificationProperties.class);
+                        assertThat(properties.telegram()).isNotNull();
+                        assertThat(properties.telegram().botToken()).isEqualTo("telegram-token-xyz");
+                        assertThat(properties.telegram().botUsername()).isEqualTo("tanaw_alert_bot");
+                        assertThat(properties.telegram().connectTimeout()).isEqualTo(Duration.ofSeconds(5));
+                        assertThat(properties.telegram().readTimeout()).isEqualTo(Duration.ofSeconds(20));
+                    });
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"PT0S", "-PT1S"})
+        @DisplayName("non-positive telegram connect timeout fails context startup")
+        void nonPositiveTelegramConnectTimeoutFailsStartup(String invalidTimeout) {
+            contextWithValidProperties()
+                    .withPropertyValues(
+                            "notification.telegram.bot-token=telegram-token-xyz",
+                            "notification.telegram.connect-timeout=" + invalidTimeout
+                    )
+                    .run(context -> {
+                        assertThat(context).hasFailed();
+                        assertThat(context.getStartupFailure())
+                                .isInstanceOf(ConfigurationPropertiesBindException.class);
+                    });
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"PT0S", "-PT2S"})
+        @DisplayName("non-positive telegram read timeout fails context startup")
+        void nonPositiveTelegramReadTimeoutFailsStartup(String invalidTimeout) {
+            contextWithValidProperties()
+                    .withPropertyValues(
+                            "notification.telegram.bot-token=telegram-token-xyz",
+                            "notification.telegram.read-timeout=" + invalidTimeout
+                    )
+                    .run(context -> {
+                        assertThat(context).hasFailed();
+                        assertThat(context.getStartupFailure())
+                                .isInstanceOf(ConfigurationPropertiesBindException.class);
+                    });
+        }
+
+        @Test
+        @DisplayName("valid email properties bind successfully to context")
+        void validEmailPropertiesBindSuccessfully() {
+            contextWithValidProperties()
+                    .withPropertyValues(
+                            "notification.email.from-address=custom@tanaw.dev",
+                            "notification.email.from-name=Custom Alert Name",
+                            "notification.email.connect-timeout=PT3S",
+                            "notification.email.read-timeout=PT8S"
+                    )
+                    .run(context -> {
+                        assertThat(context).hasNotFailed();
+                        NotificationProperties properties = context.getBean(NotificationProperties.class);
+                        assertThat(properties.email()).isNotNull();
+                        assertThat(properties.email().fromAddress()).isEqualTo("custom@tanaw.dev");
+                        assertThat(properties.email().fromName()).isEqualTo("Custom Alert Name");
+                        assertThat(properties.email().connectTimeout()).isEqualTo(Duration.ofSeconds(3));
+                        assertThat(properties.email().readTimeout()).isEqualTo(Duration.ofSeconds(8));
+                    });
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"PT0S", "-PT1S"})
+        @DisplayName("non-positive email connect timeout fails context startup")
+        void nonPositiveEmailConnectTimeoutFailsStartup(String invalidTimeout) {
+            contextWithValidProperties()
+                    .withPropertyValues(
+                            "notification.email.from-address=alerts@tanaw.dev",
+                            "notification.email.connect-timeout=" + invalidTimeout
+                    )
+                    .run(context -> {
+                        assertThat(context).hasFailed();
+                        assertThat(context.getStartupFailure())
+                                .isInstanceOf(ConfigurationPropertiesBindException.class);
+                    });
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"PT0S", "-PT2S"})
+        @DisplayName("non-positive email read timeout fails context startup")
+        void nonPositiveEmailReadTimeoutFailsStartup(String invalidTimeout) {
+            contextWithValidProperties()
+                    .withPropertyValues(
+                            "notification.email.from-address=alerts@tanaw.dev",
+                            "notification.email.read-timeout=" + invalidTimeout
+                    )
+                    .run(context -> {
+                        assertThat(context).hasFailed();
+                        assertThat(context.getStartupFailure())
+                                .isInstanceOf(ConfigurationPropertiesBindException.class);
                     });
         }
 

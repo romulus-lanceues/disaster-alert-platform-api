@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
@@ -19,9 +20,23 @@ public record NotificationProperties(
         @NotNull @Valid Fanout fanout,
         @NotNull @Valid Discord discord,
         @NotNull @Valid Crypto crypto,
-        @Valid Telegram telegram
+        @Valid Telegram telegram,
+        @Valid Email email
 ) {
 
+    public NotificationProperties(
+            Boolean dryRun,
+            Dispatcher dispatcher,
+            Retry retry,
+            Fanout fanout,
+            Discord discord,
+            Crypto crypto,
+            Telegram telegram
+    ) {
+        this(dryRun, dispatcher, retry, fanout, discord, crypto, telegram, null);
+    }
+
+    @ConstructorBinding
     public NotificationProperties {
         Objects.requireNonNull(dryRun, "Notification dry run must not be null.");
         Objects.requireNonNull(dispatcher, "Notification dispatcher configuration must not be null.");
@@ -121,6 +136,53 @@ public record NotificationProperties(
 
     public record Telegram(
             String botToken,
-            String botUsername
-    ) {}
+            String botUsername,
+            Duration connectTimeout,
+            Duration readTimeout
+    ) {
+        public Telegram {
+            if (connectTimeout == null) {
+                connectTimeout = Duration.ofSeconds(3);
+            }
+            if (readTimeout == null) {
+                readTimeout = Duration.ofSeconds(10);
+            }
+            if (connectTimeout.isZero() || connectTimeout.isNegative()) {
+                throw new IllegalArgumentException("Telegram connect timeout must be positive.");
+            }
+            if (readTimeout.isZero() || readTimeout.isNegative()) {
+                throw new IllegalArgumentException("Telegram read timeout must be positive.");
+            }
+        }
+    }
+
+    public record Email(
+            String fromAddress,
+            String fromName,
+            Duration connectTimeout,
+            Duration readTimeout
+    ) {
+        public Email {
+            if (fromAddress == null) {
+                fromAddress = "no-reply@tanaw.dev";
+            } else if (fromAddress.isBlank()) {
+                throw new IllegalArgumentException("Email fromAddress must not be blank.");
+            }
+            if (fromName == null || fromName.isBlank()) {
+                fromName = "Tanaw Alerts";
+            }
+            if (connectTimeout == null) {
+                connectTimeout = Duration.ofSeconds(5);
+            }
+            if (readTimeout == null) {
+                readTimeout = Duration.ofSeconds(10);
+            }
+            if (connectTimeout.isZero() || connectTimeout.isNegative()) {
+                throw new IllegalArgumentException("Email connect timeout must be positive.");
+            }
+            if (readTimeout.isZero() || readTimeout.isNegative()) {
+                throw new IllegalArgumentException("Email read timeout must be positive.");
+            }
+        }
+    }
 }
