@@ -21,18 +21,36 @@ import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordDestin
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordNotificationSender;
 import dev.romulus_lanceues.tanaw_api.notification.channel.discord.DiscordTestSender;
 import dev.romulus_lanceues.tanaw_api.notification.channel.email.EmailDestinationValidator;
+import dev.romulus_lanceues.tanaw_api.notification.channel.email.EmailNotificationSender;
+import dev.romulus_lanceues.tanaw_api.notification.channel.email.EmailTestSender;
 import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramDestinationValidator;
+import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramNotificationSender;
+import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramRateLimiter;
+import dev.romulus_lanceues.tanaw_api.notification.channel.telegram.TelegramTestSender;
 import dev.romulus_lanceues.tanaw_api.notification.destination.DestinationMasker;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.EndpointTestRateLimiter;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpoint;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpointNotFoundException;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpointRepository;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpointResponse;
 import dev.romulus_lanceues.tanaw_api.notification.endpoint.NotificationEndpointService;
+import dev.romulus_lanceues.tanaw_api.notification.endpoint.RateLimitExceededException;
 import dev.romulus_lanceues.tanaw_api.user.User;
 import dev.romulus_lanceues.tanaw_api.user.UserStatus;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -44,7 +62,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import org.testcontainers.junit.jupiter.Container;
@@ -52,21 +73,18 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicLong;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withNoContent;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 @DataJpaTest
@@ -87,6 +105,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
         EmailDestinationValidator.class,
         DiscordNotificationSender.class,
         DiscordTestSender.class,
+        TelegramNotificationSender.class,
+        TelegramTestSender.class,
+        TelegramRateLimiter.class,
+        EmailNotificationSender.class,
+        EmailTestSender.class,
         ChannelSupportRegistry.class,
         NotificationSyntheticDeliveryIntegrationTest.TestConfig.class
 })
@@ -106,7 +129,7 @@ class NotificationSyntheticDeliveryIntegrationTest {
     static class TestConfig {
 
         private final RestClient.Builder restClientBuilder = RestClient.builder();
-        private final MockRestServiceServer mockServer = MockRestServiceServer.bindTo(restClientBuilder).build();
+        private final MockRestServiceServer mockServer = MockRestServiceServer.bindTo(restClientBuilder).ignoreExpectOrder(true).build();
 
         @Bean
         public Clock clock() {
@@ -122,7 +145,7 @@ class NotificationSyntheticDeliveryIntegrationTest {
                     new NotificationProperties.Fanout(Duration.ofHours(6)),
                     new NotificationProperties.Discord(Duration.ofSeconds(3), Duration.ofSeconds(10)),
                     new NotificationProperties.Crypto("dGVzdC1zZWNyZXQta2V5LTMyLWJ5dGVzLWxvbmctISEhIQ=="),
-                    null
+                    new NotificationProperties.Telegram("123456:test-bot-token", "test_bot", null, null)
             );
         }
 
@@ -134,6 +157,12 @@ class NotificationSyntheticDeliveryIntegrationTest {
         @Bean
         public MockRestServiceServer mockRestServiceServer() {
             return mockServer;
+        }
+
+        @Bean
+        @Qualifier("telegramRestClient")
+        public RestClient telegramRestClient() {
+            return restClientBuilder.build();
         }
 
         @Bean
@@ -160,6 +189,15 @@ class NotificationSyntheticDeliveryIntegrationTest {
 
     @Autowired
     private MockRestServiceServer mockServer;
+
+    @MockitoBean
+    private JavaMailSender mailSender;
+
+    @Autowired
+    private ChannelSupportRegistry registry;
+
+    @Autowired
+    private NotificationFanoutService fanoutService;
 
     private final GeoPointFactory geoPointFactory = new GeoPointFactory();
     private static final AtomicLong PSGC_COUNTER = new AtomicLong(4000000000L);
@@ -263,6 +301,168 @@ class NotificationSyntheticDeliveryIntegrationTest {
         NotificationEndpoint verifiedEndpoint = endpointRepository.findById(endpoint.getId()).orElseThrow();
         assertThat(verifiedEndpoint.getVerifiedAt()).isEqualTo(FIXED_NOW);
         assertThat(verifiedEndpoint.isEnabled()).isTrue();
+    }
+
+    @Test
+    void registersAllThreeChannelImplementations() {
+        assertThat(registry.getSupportedChannels()).containsExactlyInAnyOrder(NotificationChannel.values());
+        assertThat(registry.getSupportedSenderChannels()).containsExactlyInAnyOrder(NotificationChannel.values());
+        for (NotificationChannel channel : NotificationChannel.values()) {
+            assertThat(registry.getSender(channel).channel()).isEqualTo(channel);
+            assertThat(registry.getVerifier(channel).channel()).isEqualTo(channel);
+        }
+    }
+
+    @Test
+    void fansOutOneAlertToAllChannelsIdempotently() {
+        createThreeVerifiedEndpoints();
+        Alert alert = createMultiChannelAlert();
+
+        assertThat(fanoutService.fanout().notificationsCreated()).isEqualTo(3);
+        assertThat(fanoutService.fanout().notificationsCreated()).isZero();
+        entityManager.clear();
+        assertThat(entityManager.find(Alert.class, alert.getId()).getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        List<Notification> notifications = notificationRepository.findAll();
+        assertThat(notifications).hasSize(3);
+        assertThat(notifications).extracting(Notification::getChannel)
+                .containsExactlyInAnyOrder(NotificationChannel.values());
+        assertThat(notifications).allSatisfy(notification -> {
+            assertThat(notification.getStatus()).isEqualTo(NotificationStatus.PENDING);
+            assertThat(notification.getAttemptCount()).isZero();
+            assertThat(notification.getEndpoint().getChannel()).isEqualTo(notification.getChannel());
+            assertThat(notification.getDestination()).isEqualTo(notification.getEndpoint().getDestinationHint());
+        });
+    }
+
+    @Test
+    void dispatchesOneAlertThroughAllThreeRealSenders() throws Exception {
+        createThreeVerifiedEndpoints();
+        Alert alert = createMultiChannelAlert();
+        given(mailSender.createMimeMessage()).willAnswer(invocation -> new MimeMessage((Session) null));
+        expectDiscordDelivery();
+        mockServer.expect(requestTo("https://api.telegram.org/bot123456:test-bot-token/sendMessage"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.chat_id").value("123456789"))
+                .andExpect(jsonPath("$.text").value(containsString("[TEST]")))
+                .andRespond(withSuccess("{\"ok\":true,\"result\":{\"message_id\":42}}", MediaType.APPLICATION_JSON));
+
+        DispatchTickResult result = dispatcher.dispatchTick();
+        assertThat(result.fanoutResult().notificationsCreated()).isEqualTo(3);
+        assertThat(result.notificationsDispatched()).isEqualTo(3);
+        mockServer.verify();
+        ArgumentCaptor<MimeMessage> mail = ArgumentCaptor.forClass(MimeMessage.class);
+        then(mailSender).should().send(mail.capture());
+        assertThat(mail.getValue().getAllRecipients()[0].toString()).isEqualTo(destination(NotificationChannel.EMAIL));
+        assertThat(mail.getValue().getSubject()).contains("[TEST]");
+        entityManager.clear();
+        assertThat(entityManager.find(Alert.class, alert.getId()).getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        assertThat(notificationRepository.findAll()).hasSize(3).allSatisfy(notification -> {
+            assertThat(notification.getStatus()).isEqualTo(NotificationStatus.SENT);
+            assertThat(notification.getAttemptCount()).isEqualTo(1);
+            assertThat(notification.getLockedUntil()).isNull();
+            assertThat(notification.getSentAt()).isEqualTo(FIXED_NOW);
+            assertThat(notification.getProviderMessageId()).isNotBlank();
+        });
+        assertThat(dispatcher.dispatchTick().notificationsDispatched()).isZero();
+    }
+
+    @Test
+    void upsertsAndVerifiesAllChannelsUsingRegisteredVerifiers() {
+        given(mailSender.createMimeMessage()).willAnswer(invocation -> new MimeMessage((Session) null));
+        mockServer.expect(requestTo("https://discord.com/api/webhooks/123456789/multichannel-token"))
+                .andExpect(jsonPath("$.embeds[0].title").value(containsString("[TEST]")))
+                .andExpect(jsonPath("$.allowed_mentions.parse").isEmpty())
+                .andRespond(withNoContent());
+        mockServer.expect(requestTo("https://api.telegram.org/bot123456:test-bot-token/sendMessage"))
+                .andExpect(jsonPath("$.chat_id").value("123456789"))
+                .andExpect(jsonPath("$.text").value(containsString("[TEST]")))
+                .andRespond(withSuccess("{\"ok\":true}", MediaType.APPLICATION_JSON));
+        for (NotificationChannel channel : NotificationChannel.values()) {
+            NotificationEndpointResponse created = endpointService.upsertEndpoint(primaryUser.getId(), channel, destination(channel));
+            assertThat(created.verifiedAt()).isNull();
+            NotificationEndpointResponse verified = endpointService.testEndpoint(primaryUser.getId(), created.id());
+            assertThat(verified.channel()).isEqualTo(channel);
+            assertThat(verified.verifiedAt()).isEqualTo(FIXED_NOW);
+            entityManager.flush();
+            entityManager.clear();
+            assertThat(endpointRepository.findById(created.id()).orElseThrow().getVerifiedAt()).isEqualTo(FIXED_NOW);
+            NotificationEndpointResponse updated = endpointService.upsertEndpoint(primaryUser.getId(), channel, destination(channel));
+            assertThat(updated.id()).isEqualTo(created.id());
+            assertThat(updated.verifiedAt()).isNull();
+        }
+        mockServer.verify();
+        then(mailSender).should().send(any(MimeMessage.class));
+        assertThat(endpointRepository.findByUserIdOrderByCreatedAtAsc(primaryUser.getId())).hasSize(3);
+        NotificationEndpoint endpoint = endpointRepository.findByUserIdAndChannel(primaryUser.getId(), NotificationChannel.EMAIL).orElseThrow();
+        assertThatThrownBy(() -> endpointService.testEndpoint(primaryUser.getId(), endpoint.getId()))
+                .isInstanceOf(RateLimitExceededException.class);
+    }
+
+    @Test
+    void rejectsCrossUserVerificationForEveryChannelBeforeSending() {
+        createThreeVerifiedEndpoints();
+        UUID otherUser = UUID.randomUUID();
+        for (NotificationEndpoint endpoint : endpointRepository.findByUserIdOrderByCreatedAtAsc(primaryUser.getId())) {
+            assertThatThrownBy(() -> endpointService.testEndpoint(otherUser, endpoint.getId()))
+                    .isInstanceOf(NotificationEndpointNotFoundException.class);
+        }
+        then(mailSender).shouldHaveNoInteractions();
+        mockServer.verify();
+    }
+
+    @Test
+    void telegramFailureDoesNotPreventDiscordAndEmailDelivery() {
+        persistEndpoint(primaryUser, NotificationChannel.DISCORD, destination(NotificationChannel.DISCORD), "masked-discord", true, FIXED_NOW.minusSeconds(60));
+        persistEndpoint(primaryUser, NotificationChannel.EMAIL, destination(NotificationChannel.EMAIL), "masked-email", true, FIXED_NOW.minusSeconds(60));
+        persistEndpoint(primaryUser, NotificationChannel.TELEGRAM, "987654321", "masked-telegram", true, FIXED_NOW.minusSeconds(60));
+        Alert alert = createMultiChannelAlert();
+        given(mailSender.createMimeMessage()).willAnswer(invocation -> new MimeMessage((Session) null));
+        expectDiscordDelivery();
+        mockServer.expect(requestTo("https://api.telegram.org/bot123456:test-bot-token/sendMessage"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"ok\":false,\"error_code\":429,\"parameters\":{\"retry_after\":30}}"));
+        assertThat(dispatcher.dispatchTick().notificationsDispatched()).isEqualTo(3);
+        mockServer.verify();
+        entityManager.clear();
+        assertThat(entityManager.find(Alert.class, alert.getId()).getStatus()).isEqualTo(AlertStatus.PROCESSED);
+        assertThat(notificationRepository.findAll()).hasSize(3).allSatisfy(notification -> {
+            if (notification.getChannel() == NotificationChannel.TELEGRAM) {
+                assertThat(notification.getStatus()).isEqualTo(NotificationStatus.PENDING);
+                assertThat(notification.getNextAttemptAt()).isAfterOrEqualTo(FIXED_NOW.plusSeconds(30));
+                assertThat(notification.getFailureReason()).doesNotContain("test-bot-token");
+            } else {
+                assertThat(notification.getStatus()).isEqualTo(NotificationStatus.SENT);
+            }
+            assertThat(notification.getAttemptCount()).isEqualTo(1);
+            assertThat(notification.getLockedUntil()).isNull();
+        });
+    }
+
+    private String destination(NotificationChannel channel) {
+        return switch (channel) {
+            case DISCORD -> "https://discord.com/api/webhooks/123456789/multichannel-token";
+            case TELEGRAM -> "123456789";
+            case EMAIL -> "recipient@example.com";
+        };
+    }
+
+    private void createThreeVerifiedEndpoints() {
+        for (NotificationChannel channel : NotificationChannel.values()) {
+            persistEndpoint(primaryUser, channel, destination(channel), "masked-" + channel, true, FIXED_NOW.minusSeconds(60));
+        }
+    }
+
+    private Alert createMultiChannelAlert() {
+        DisasterEvent event = persistDisasterEvent("USGS", "multi-" + UUID.randomUUID(), "[TEST] Multi-channel drill", FIXED_NOW.minusSeconds(60));
+        persistEarthquake(event, 14.6000, 120.9850, 6.2, 10.0);
+        return persistAlert(event, primaryRule, AlertStatus.PENDING, FIXED_NOW.minusSeconds(30));
+    }
+
+    private void expectDiscordDelivery() {
+        mockServer.expect(requestTo(destination(NotificationChannel.DISCORD) + "?wait=true"))
+                .andExpect(jsonPath("$.allowed_mentions.parse").isEmpty())
+                .andRespond(withSuccess("{\"id\":\"multi-discord-id\"}", MediaType.APPLICATION_JSON));
     }
 
     // Helper persistence methods

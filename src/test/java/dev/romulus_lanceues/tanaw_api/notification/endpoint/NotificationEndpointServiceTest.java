@@ -19,6 +19,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -40,6 +42,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("NotificationEndpointService Unit Tests")
@@ -108,6 +111,24 @@ class NotificationEndpointServiceTest {
                 .passwordHash("hashed")
                 .status(UserStatus.ACTIVE)
                 .build();
+    }
+
+    @ParameterizedTest
+    @EnumSource(NotificationChannel.class)
+    void failedVerificationDoesNotVerifyOrSaveAnyChannel(NotificationChannel channel) {
+        NotificationEndpoint endpoint = NotificationEndpoint.builder()
+                .id(endpointId).user(testUser).channel(channel)
+                .destination("test destination").destinationHint("masked").enabled(true).build();
+        ChannelVerifier verifier = mock(ChannelVerifier.class);
+        given(notificationEndpointRepository.findByIdAndUserId(endpointId, userId)).willReturn(Optional.of(endpoint));
+        given(channelSupportRegistry.getVerifier(channel)).willReturn(verifier);
+        willThrow(new EndpointVerificationException("Provider unavailable")).given(verifier).verify("test destination");
+
+        assertThatThrownBy(() -> service.testEndpoint(userId, endpointId))
+                .isInstanceOf(EndpointVerificationException.class);
+        assertThat(endpoint.getVerifiedAt()).isNull();
+        then(endpointTestRateLimiter).should().acquire(userId);
+        then(notificationEndpointRepository).should(never()).save(any());
     }
 
     @Nested

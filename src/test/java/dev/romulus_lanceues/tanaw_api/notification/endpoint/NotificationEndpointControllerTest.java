@@ -17,6 +17,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -104,6 +106,43 @@ class NotificationEndpointControllerTest {
                 Instant.parse("2026-10-16T10:00:00Z"),
                 Instant.parse("2026-10-16T10:00:00Z")
         );
+    }
+
+    @ParameterizedTest
+    @EnumSource(NotificationChannel.class)
+    void upsertsAndTestsEveryChannelUsingAuthenticatedOwner(NotificationChannel channel) throws Exception {
+        String destination = switch (channel) {
+            case DISCORD -> "https://discord.com/api/webhooks/123456789/controller-test-token";
+            case TELEGRAM -> "123456789";
+            case EMAIL -> "recipient@example.com";
+        };
+        Instant verifiedAt = Instant.parse("2026-10-16T12:00:00Z");
+        NotificationEndpointResponse unverified = new NotificationEndpointResponse(
+                endpointId, userId, channel, "masked destination", true, null, null, verifiedAt, verifiedAt);
+        NotificationEndpointResponse verified = new NotificationEndpointResponse(
+                endpointId, userId, channel, "masked destination", true, verifiedAt, null, verifiedAt, verifiedAt);
+        given(notificationEndpointService.upsertEndpoint(userId, channel, destination)).willReturn(unverified);
+        given(notificationEndpointService.testEndpoint(userId, endpointId)).willReturn(verified);
+        String token = jwtFactory.createValidToken(userId);
+
+        mockMvc.perform(put(BASE_URL)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"channel\":\"" + channel + "\",\"destination\":\"" + destination + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.channel", is(channel.name())))
+                .andExpect(jsonPath("$.userId", is(userId.toString())))
+                .andExpect(jsonPath("$.destinationHint", is("masked destination")))
+                .andExpect(jsonPath("$.destination").doesNotExist())
+                .andExpect(jsonPath("$.verifiedAt").doesNotExist());
+        mockMvc.perform(post(BASE_URL + "/" + endpointId + "/test")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.channel", is(channel.name())))
+                .andExpect(jsonPath("$.verifiedAt").exists())
+                .andExpect(jsonPath("$.destination").doesNotExist());
+        then(notificationEndpointService).should().upsertEndpoint(userId, channel, destination);
+        then(notificationEndpointService).should().testEndpoint(userId, endpointId);
     }
 
     @Nested
